@@ -21,7 +21,7 @@ export function renderBar(model: ChartModel): string {
   const titleH = title ? 22 : 0
   const mTop = 10 + titleH
   const mRight = 16
-  const mBottom = (showAxis ? 38 : 22) + legendH
+  const mBottom = (showAxis ? 42 : 22) + legendH
   const mLeft = showAxis ? 44 : 16
 
   const px0 = mLeft
@@ -64,7 +64,7 @@ export function renderBar(model: ChartModel): string {
       if (showGrid && i > 0) {
         parts.push(`<line x1="${px0}" y1="${y.toFixed(1)}" x2="${px1}" y2="${y.toFixed(1)}" stroke="#EEEEEE" stroke-width="1"/>`)
       }
-      parts.push(`<text x="${px0 - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="#8a8f99">${fmt(v)}</text>`)
+      parts.push(`<text x="${px0 - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="11" fill="#000000">${fmt(v)}</text>`)
     }
     // 基线
     parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#cccccc" stroke-width="1"/>`)
@@ -83,7 +83,7 @@ export function renderBar(model: ChartModel): string {
       const color = seriesColor(model.series[s]!, s, opt)
       parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(barW * 0.9).toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" fill="${color}" rx="1.5"/>`)
       if (valueLabel && h > 0) {
-        parts.push(`<text x="${(x + barW * 0.45).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="#5a6068">${fmt(val)}</text>`)
+        parts.push(`<text x="${(x + barW * 0.45).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#000000">${fmt(val)}</text>`)
       }
     }
     // x 轴标签：始终以类目为基准居中于对应条带正下方，并与图表留一点间距
@@ -102,7 +102,7 @@ export function renderBar(model: ChartModel): string {
     }
     const startX = legendStartX(align, W, totalW, px0)
     let lx = startX
-    let ly = py1 + (showAxis ? 30 : 16)
+    let ly = py1 + (showAxis ? 40 : 16)
     for (let s = 0; s < sCount; s++) {
       const name = model.series[s]!.name || `系列${s + 1}`
       const color = seriesColor(model.series[s]!, s, opt)
@@ -112,7 +112,7 @@ export function renderBar(model: ChartModel): string {
         ly += 16
       }
       parts.push(`<rect x="${lx}" y="${ly - 9}" width="11" height="11" rx="2" fill="${color}"/>`)
-      parts.push(`<text x="${lx + 15}" y="${ly}" font-size="10" fill="#5a6068">${escapeXml(truncate(name, 10))}</text>`)
+      parts.push(`<text x="${lx + 15}" y="${ly}" font-size="11" fill="#000000">${escapeXml(truncate(name, 10))}</text>`)
       lx += itemW
     }
   }

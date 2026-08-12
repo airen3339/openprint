@@ -28,6 +28,7 @@ import PreviewPanel from '@/design/preview/PreviewPanel.vue'
 import ExportDialog from '@/design/toolbar/ExportDialog.vue'
 import AiAssistantPanel from '@/design/ai/AiAssistantPanel.vue'
 import { useConfirm } from '@/design/composables/useConfirm'
+import { usePrinterProbe } from '@/design/composables/usePrinterProbe'
 import { createDemoTemplate, DEMO_TEMPLATE_NAME } from '@/repository/mock/data/demo-template'
 import { exportTemplateFile, importTemplateFile } from '@/design/utils/template-file'
 import { validateTemplate } from '@/core/spec/validator'
@@ -104,6 +105,57 @@ function onHelpKey(e: KeyboardEvent): void {
 
 onMounted(() => window.addEventListener('keydown', onHelpKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onHelpKey))
+
+/* --------------------------- 打印机连接自测 --------------------------- */
+
+const {
+  state: printerState,
+  printers: printerList,
+  health: printerHealth,
+  errorText: printerError,
+  baseUrl: printerBase,
+  probe: runPrinterProbe,
+  probeIfStale: runPrinterProbeIfStale,
+} = usePrinterProbe()
+
+/** 状态灯颜色：绿=已连接 / 红=不可达 / 黄=检测中 / 灰=未检测 */
+const printerDotClass = computed(() => `is-${printerState.value}`)
+
+/** 悬停提示：版本 + 打印机数量 / 失败原因 */
+const printerTooltip = computed(() => {
+  switch (printerState.value) {
+    case 'connected':
+      return `打印 · 客户端已连接（${printerHealth.value?.app ?? 'OpenPrint'} v${
+        printerHealth.value?.version ?? '?'
+      } · ${printerList.value.length} 台打印机）`
+    case 'checking':
+      return '打印 · 正在检测打印客户端…'
+    case 'disconnected':
+      return `打印 · 客户端不可达：${printerError.value}（${printerBase.value}）`
+    default:
+      return `打印 · 点击自测客户端连接（${printerBase.value}）`
+  }
+})
+
+/** 启动后静默自测一次，让状态灯有初值（失败不打扰用户） */
+onMounted(() => {
+  void runPrinterProbeIfStale()
+})
+
+/** 点击打印按钮：先自测连接状态，再打开打印弹窗 */
+async function onPrintClick(): Promise<void> {
+  showPrint.value = true
+  const ok = await runPrinterProbe()
+  if (ok) {
+    message.success(
+      `打印客户端已连接：${printerHealth.value?.app ?? 'OpenPrint'} v${
+        printerHealth.value?.version ?? '?'
+      } · ${printerList.value.length} 台打印机`,
+    )
+  } else {
+    message.warning(`打印客户端不可达：${printerError.value}`)
+  }
+}
 
 function onTemplateName(v: string): void {
   store.templateName = v
@@ -425,14 +477,20 @@ const IconChevronDown: Component = () =>
       <NButton size="small" type="primary" @click="onSave">保存</NButton>
       <NButton size="small" ghost class="toolbar-ghost-btn" @click="onExport">导出</NButton>
 
-      <!-- 打印按钮 -->
+      <!-- 打印按钮（右上角状态灯：绿=已连接 / 红=不可达 / 黄=检测中 / 灰=未检测） -->
       <NTooltip>
         <template #trigger>
-          <NButton quaternary size="small" class="toolbar-icon-btn" @click="showPrint = true">
+          <NButton
+            quaternary
+            size="small"
+            class="toolbar-icon-btn printer-btn"
+            @click="onPrintClick"
+          >
             <div class="i-carbon-printer text-16px" />
+            <span class="printer-dot" :class="printerDotClass" />
           </NButton>
         </template>
-        打印
+        {{ printerTooltip }}
       </NTooltip>
 
       <!-- JSON 查看 -->
@@ -819,4 +877,49 @@ const IconChevronDown: Component = () =>
   padding-top: 12px;
 }
 
+/* ================= 打印按钮连接状态灯 ================= */
+.printer-btn {
+  position: relative;
+}
+
+.printer-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--brand-nav-bg, #fff);
+  background: #9ca3af;
+  transition: background 0.2s;
+}
+
+.printer-dot.is-connected {
+  background: #22c55e;
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.7);
+}
+
+.printer-dot.is-disconnected {
+  background: #ef4444;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.7);
+}
+
+.printer-dot.is-checking {
+  background: #f59e0b;
+  animation: printer-dot-pulse 1s ease-in-out infinite;
+}
+
+.printer-dot.is-idle {
+  background: #9ca3af;
+}
+
+@keyframes printer-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
 </style>

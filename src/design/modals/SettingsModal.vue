@@ -3,7 +3,7 @@
  * SettingsModal —— 全局设置弹窗（naive-ui Modal + 左侧功能栏 + 右侧配置区）
  * 目前两个配置页：本地打印 / 远程云打印（配置存 localStorage，见 config/print-settings.ts）。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   NButton,
   NInput,
@@ -11,6 +11,7 @@ import {
   NModal,
   NSelect,
   NSwitch,
+  NTag,
   NText,
   useMessage,
 } from 'naive-ui'
@@ -20,6 +21,13 @@ import {
   writePrintSettings,
   type PrintSettings,
 } from '@/config/print-settings'
+import {
+  buildPrinterBase,
+  envPrinterBase,
+  FACTORY_PRINTER_BASE_URL,
+  hasEnvPrinterBase,
+} from '@/config/printer'
+import { checkHealth, listPrinters, describePrintError } from '@/core/print-client'
 import {
   readAiSettings,
   writeAiSettings,
@@ -101,6 +109,52 @@ async function testRemote(): Promise<void> {
   }
 }
 
+/* --------------------------- 本地打印客户端连接测试 --------------------------- */
+
+/** 当前设置面板里填出来的基地址（实时预览，未保存也能看到） */
+const localBase = computed(() =>
+  buildPrinterBase(settings.value.local.silent.host, settings.value.local.silent.port),
+)
+
+const testingLocal = ref(false)
+type LocalTest = { ok: boolean; text: string }
+const localTestResult = ref<LocalTest | null>(null)
+
+/** 自测本地打印客户端：/health 拿版本 → /printers 拿数量 */
+async function testLocalClient(): Promise<void> {
+  const base = localBase.value || FACTORY_PRINTER_BASE_URL
+  testingLocal.value = true
+  localTestResult.value = null
+  try {
+    const health = await checkHealth(base)
+    let count = health.printers
+    try {
+      count = (await listPrinters(base)).length
+    } catch {
+      /* 打印机枚举失败不影响健康判定，沿用 health.printers */
+    }
+    localTestResult.value = {
+      ok: true,
+      text: `连接正常 · ${health.app} v${health.version} · ${count} 台打印机`,
+    }
+    message.success(`打印客户端已连接（${count} 台打印机）`)
+  } catch (e) {
+    const reason = describePrintError(e)
+    localTestResult.value = { ok: false, text: `${reason}（${base}）` }
+    message.warning(reason)
+  } finally {
+    testingLocal.value = false
+  }
+}
+
+/** 恢复出厂地址 127.0.0.1:18888 */
+function resetLocalEndpoint(): void {
+  settings.value.local.silent.host = '127.0.0.1'
+  settings.value.local.silent.port = 18888
+  localTestResult.value = null
+  message.success('已恢复出厂地址 127.0.0.1:18888')
+}
+
 /** 客户端下载占位：Windows 静默打印客户端发布后在此挂真实下载链接 */
 function onDownloadClient(): void {
   message.info('Windows 静默打印客户端即将发布，敬请期待')
@@ -180,41 +234,69 @@ function copyToClipboard(value: string, label: string): void {
             </NText>
           </div>
 
-          <!-- 客户端静默打印：连接参数 + 客户端下载 -->
-          <template v-if="settings.local.method === 'silent'">
-            <div class="rounded-8px border border-brand-border bg-brand-surface p-3">
-              <div class="config-title mb-2">客户端连接（静默打印）</div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <div class="config-label">客户端 IP 地址</div>
-                  <NInput v-model:value="settings.local.silent.host" size="small" placeholder="127.0.0.1" />
-                </div>
-                <div>
-                  <div class="config-label">端口</div>
-                  <NInputNumber
-                    v-model:value="settings.local.silent.port"
-                    size="small"
-                    :min="1"
-                    :max="65535"
-                    style="width: 100%"
-                  />
-                </div>
+          <!-- 打印客户端服务地址（/health · /printers · /print 共用） -->
+          <div class="rounded-8px border border-brand-border bg-brand-surface p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <div class="config-title" style="margin-bottom: 0">打印客户端服务地址</div>
+              <NButton text size="tiny" @click="resetLocalEndpoint">恢复出厂 18888</NButton>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <div class="config-label">客户端 IP 地址</div>
+                <NInput
+                  v-model:value="settings.local.silent.host"
+                  size="small"
+                  placeholder="127.0.0.1"
+                />
               </div>
-              <NText depth="3" class="block text-12px mt-1">
-                需在打印终端安装 Windows 静默打印客户端，浏览器通过该地址把打印任务发给客户端。
-              </NText>
+              <div>
+                <div class="config-label">端口</div>
+                <NInputNumber
+                  v-model:value="settings.local.silent.port"
+                  size="small"
+                  :min="1"
+                  :max="65535"
+                  placeholder="18888"
+                  style="width: 100%"
+                />
+              </div>
             </div>
 
-            <div>
-              <NButton size="small" secondary @click="onDownloadClient">
+            <div class="mt-2 flex items-center gap-2">
+              <NButton size="small" secondary :loading="testingLocal" @click="testLocalClient">
                 <template #icon>
-                  <div class="i-carbon-download text-14px" />
+                  <div class="i-carbon-plug text-14px" />
                 </template>
-                下载客户端
+                测试连接
               </NButton>
-              <NText depth="3" class="block text-12px mt-1">Windows 客户端安装包即将提供下载。</NText>
+              <NTag v-if="localTestResult" size="small" round :type="localTestResult.ok ? 'success' : 'error'">
+                {{ localTestResult.text }}
+              </NTag>
             </div>
-          </template>
+
+            <NText depth="3" class="block text-12px mt-2">
+              当前生效：<b>{{ localBase || FACTORY_PRINTER_BASE_URL }}</b>
+              —— 打印机探测（/health、/printers）与任务推送（/print）都走这个地址。
+            </NText>
+            <NText depth="3" class="block text-12px mt-1">
+              出厂默认 {{ FACTORY_PRINTER_BASE_URL }}；这里填的地址优先级最高，会覆盖构建期环境变量
+              <code>VITE_OPENPRINT_PRINTER_BASE</code>。
+              <template v-if="hasEnvPrinterBase">
+                当前环境变量为 <b>{{ envPrinterBase }}</b>（仅在此处留空时生效）。
+              </template>
+            </NText>
+          </div>
+
+          <!-- 客户端静默打印：安装包下载 -->
+          <div v-if="settings.local.method === 'silent'">
+            <NButton size="small" secondary @click="onDownloadClient">
+              <template #icon>
+                <div class="i-carbon-download text-14px" />
+              </template>
+              下载客户端
+            </NButton>
+            <NText depth="3" class="block text-12px mt-1">Windows 客户端安装包即将提供下载。</NText>
+          </div>
 
           <div class="flex items-center justify-between">
             <span class="config-label">副本数</span>

@@ -6,11 +6,15 @@
 export interface LocalPrintConfig {
   /** 打印方式：browser=浏览器打印对话框 / silent=客户端静默打印（需本地客户端服务） */
   method: 'browser' | 'silent'
-  /** 静默打印客户端连接地址（仅 method=silent 生效） */
+  /**
+   * 本地打印客户端连接地址。
+   * 同时也是 /health、/printers、/print 三个接口的基地址来源，
+   * 解析优先级见 `@/config/printer` 的 resolvePrinterBaseUrl()。
+   */
   silent: {
-    /** 客户端所在主机 IP（默认本机回环） */
+    /** 客户端所在主机 IP（默认本机回环 127.0.0.1） */
     host: string
-    /** 客户端服务端口（默认 9122） */
+    /** 客户端服务端口（默认 18888） */
     port: number
   }
   /** 副本数 */
@@ -40,7 +44,7 @@ export const PRINT_SETTINGS_KEY = 'openprint:print-settings'
 export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   local: {
     method: 'browser',
-    silent: { host: '127.0.0.1', port: 9122 },
+    silent: { host: '127.0.0.1', port: 18888 },
     copies: 1,
     closeAfterPrint: true,
   },

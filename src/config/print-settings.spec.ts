@@ -42,7 +42,7 @@ describe('print-settings —— 打印设置读写', () => {
     const s = readPrintSettings()
     expect(s.local.method).toBe('silent')
     expect(s.local.copies).toBe(DEFAULT_PRINT_SETTINGS.local.copies)
-    expect(s.local.silent).toEqual({ host: '127.0.0.1', port: 9122 })
+    expect(s.local.silent).toEqual({ host: '127.0.0.1', port: 18888 })
     expect(s.remote.enabled).toBe(false)
   })
 })

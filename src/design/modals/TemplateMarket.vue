@@ -27,6 +27,7 @@ const keyword = ref('')
 
 const CATEGORY_ICON: Record<MarketCategory, string> = {
   invoice: 'i-carbon-document',
+  report: 'i-carbon-analytics',
   receipt: 'i-carbon-receipt',
   thermal: 'i-carbon-document-horizontal',
   label: 'i-carbon-tag',

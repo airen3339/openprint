@@ -58,7 +58,7 @@ export function renderPie(model: ChartModel): string {
       const lr = donut ? (rOuter + rInner) / 2 : rOuter * 0.62
       const p = polarL(lr, mid)
       const pct = ((v / total) * 100).toFixed(0) + '%'
-      parts.push(`<text x="${p.x.toFixed(1)}" y="${(p.y + 3).toFixed(1)}" text-anchor="middle" font-size="10" fill="#ffffff" font-weight="600">${pct}</text>`)
+      parts.push(`<text x="${p.x.toFixed(1)}" y="${(p.y + 3).toFixed(1)}" text-anchor="middle" font-size="11" fill="#ffffff" font-weight="600">${pct}</text>`)
     }
   }
 
@@ -81,7 +81,7 @@ export function renderPie(model: ChartModel): string {
         ly += 16
       }
       parts.push(`<rect x="${lx}" y="${ly - 9}" width="11" height="11" rx="2" fill="${color}"/>`)
-      parts.push(`<text x="${lx + 15}" y="${ly}" font-size="10" fill="#5a6068">${escapeXml(truncate(name, 10))}</text>`)
+      parts.push(`<text x="${lx + 15}" y="${ly}" font-size="11" fill="#000000">${escapeXml(truncate(name, 10))}</text>`)
       lx += itemW
     }
   }

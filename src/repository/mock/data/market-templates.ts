@@ -10,8 +10,11 @@
 import type {
   AnyControl,
   BarcodeControl,
+  ChartControl,
   QrcodeControl,
+  RectControl,
   TableColumn,
+  TableControl,
   TableOptions,
   TextControl,
 } from '@/types/control'
@@ -20,7 +23,7 @@ import { createDemoTemplate } from './demo-template'
 
 /* ------------------------------- 类型 ------------------------------- */
 
-export type MarketCategory = 'invoice' | 'receipt' | 'thermal' | 'label'
+export type MarketCategory = 'invoice' | 'report' | 'receipt' | 'thermal' | 'label'
 
 export interface MarketTemplate {
   id: string
@@ -37,6 +40,7 @@ export interface MarketTemplate {
 
 export const MARKET_CATEGORY_LABEL: Record<MarketCategory, string> = {
   invoice: '单据',
+  report: '报表',
   receipt: '小票',
   thermal: '热敏',
   label: '标签',
@@ -118,6 +122,69 @@ function qrcode(id: string, left: number, top: number, width: number, height: nu
   return { id, type: 'qrcode', left, top, width, height, value, errorLevel: 'M', printable: true }
 }
 
+/** 圆角色块（KPI 卡片底 / 色条 / 分区标题条） */
+function box(
+  id: string,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  fill: string,
+  stroke?: string,
+  cornerRadius = 4,
+): AnyControl {
+  const rect: RectControl = {
+    id,
+    type: 'rect',
+    left,
+    top,
+    width,
+    height,
+    fill,
+    cornerRadius,
+    shape: 'rect',
+    printable: true,
+  }
+  if (stroke) {
+    rect.stroke = stroke
+    rect.strokeWidth = 0.6
+  }
+  return rect
+}
+
+/** 图表控件（chartkit 原生 SVG，导出 PDF 走矢量） */
+function chart(
+  id: string,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  kind: ChartControl['kind'],
+  categories: string[],
+  series: ChartControl['series'],
+  options: ChartControl['options'] = {},
+): AnyControl {
+  return {
+    id,
+    type: 'chart',
+    left,
+    top,
+    width,
+    height,
+    kind,
+    categories,
+    series,
+    printable: true,
+    options: {
+      showLegend: true,
+      showAxis: true,
+      showGrid: true,
+      labelAlign: 'center',
+      ...options,
+    },
+  }
+}
+
 function table(
   id: string,
   left: number,
@@ -145,6 +212,182 @@ function table(
       ...options,
     },
   }
+}
+
+/**
+ * 精美财务分析报表（A4）。
+ * 结构：页眉（公司 + 大标题 + 报告期）→ 4 张 KPI 指标卡 → 三张矢量图表
+ * （月度营收柱状 / 营收构成环形 / 月度净利润折线）→ 分部经营明细表（内嵌数据自带合计）
+ * → 页脚。所有数据均为静态示例，开箱即用无需绑定数据源。
+ */
+function buildFinancialReport(): TemplateData<AnyControl> {
+  const w = 186
+
+  /* —— 页眉 —— */
+  const header: AnyControl[] = [
+    txt('fr-co', 0, 0, 130, 6, '深圳某某集团股份有限公司', { fontSize: 10, fontWeight: 'bold', fill: '#1677ff' }),
+    txt('fr-title', 0, 7, w, 11, '2026 年上半年财务分析报表', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+    txt('fr-period', 0, 19, w, 5, '报告期：2026-01-01 ~ 2026-06-30　　币种：人民币 / 万元', {
+      fontSize: 9,
+      textAlign: 'center',
+      fill: '#555555',
+    }),
+    rule('fr-rule', 0, 22, w, '#1677ff', 1),
+  ]
+
+  /* —— 4 张 KPI 指标卡 —— */
+  const cardW = 43
+  const cardGap = 4
+  const cardTop = 0
+  const cardH = 26
+  const cardX = [1, 1 + (cardW + cardGap), 1 + 2 * (cardW + cardGap), 1 + 3 * (cardW + cardGap)]
+  const cardAccent = ['#1677ff', '#52c41a', '#13c2c2', '#fa8c16']
+  const cardLabel = ['营业收入', '营业利润', '经营现金流', '营收同比增长']
+  const cardValue = ['12,860', '4,300', '3,420', '+18.6%']
+  const cardUnit = ['万元', '万元', '万元', '同比']
+  const cards: AnyControl[] = []
+  for (let i = 0; i < 4; i++) {
+    const x = cardX[i]!
+    const accent = cardAccent[i]!
+    const label = cardLabel[i]!
+    const value = cardValue[i]!
+    const unit = cardUnit[i]!
+    cards.push(box(`fr-kpi-${i}-bg`, x, cardTop, cardW, cardH, '#ffffff', '#e8e8e8', 4))
+    cards.push(box(`fr-kpi-${i}-bar`, x, cardTop, cardW, 5, accent, undefined, 4))
+    cards.push(txt(`fr-kpi-${i}-lbl`, x + 3, cardTop + 8, cardW - 6, 5, label, {
+      fontSize: 8,
+      fill: '#666666',
+    }))
+    cards.push(txt(`fr-kpi-${i}-val`, x + 3, cardTop + 12, cardW - 6, 9, value, {
+      fontSize: 16,
+      fontWeight: 'bold',
+      fill: accent,
+    }))
+    cards.push(txt(`fr-kpi-${i}-unit`, x + 3, cardTop + 21, cardW - 6, 4, unit, {
+      fontSize: 8,
+      fill: '#999999',
+    }))
+  }
+
+  /* —— 图表标题 —— */
+  const chartTop = 32
+  cards.push(txt('fr-chart-title', 0, chartTop - 2, w, 5, '二、经营分析', { fontSize: 11, fontWeight: 'bold', fill: '#333333' }))
+
+  /* —— 三张矢量图表 —— */
+  const chartH = 70
+  const barW = 88
+  const sideW = 47
+  const donutX = barW + 4
+  const lineX = barW + 4 + sideW + 4
+  const charts: AnyControl[] = [
+    chart('fr-bar', 0, chartTop, barW, chartH, 'bar', ['1月', '2月', '3月', '4月', '5月', '6月'], [
+      { name: '营收', data: [1980, 2100, 2240, 2050, 2180, 2310], color: '#1677ff' },
+    ], { title: '月度营收（万元）', showLegend: false, showAxis: true, showGrid: true, valueLabel: true, palette: ['#1677ff'] }),
+    chart('fr-donut', donutX, chartTop, sideW, chartH, 'pie', ['华东', '华南', '华北', '西南', '海外'], [
+      { name: '营收构成', data: [4860, 3260, 2510, 1430, 800] },
+    ], {
+      title: '营收构成',
+      donut: true,
+      showLegend: true,
+      showAxis: false,
+      showGrid: false,
+      valueLabel: false,
+      palette: ['#1677ff', '#52c41a', '#13c2c2', '#fa8c16', '#9254de'],
+    }),
+    chart('fr-line', lineX, chartTop, sideW, chartH, 'line', ['1月', '2月', '3月', '4月', '5月', '6月'], [
+      { name: '净利润', data: [300, 330, 360, 340, 360, 490], color: '#fa8c16' },
+    ], {
+      title: '月度净利润',
+      showLegend: false,
+      smooth: true,
+      area: true,
+      showAxis: true,
+      showGrid: true,
+      valueLabel: true,
+      palette: ['#fa8c16'],
+    }),
+  ]
+
+  /* —— 分部经营明细表（内嵌数据 + 合计） —— */
+  const tableTop = chartTop + chartH + 8
+  const detailRows: Array<Record<string, unknown>> = [
+    { name: '华东大区', revenue: 4860, cost: 3120, profit: 1740, margin: 0.358 },
+    { name: '华南大区', revenue: 3260, cost: 2180, profit: 1080, margin: 0.331 },
+    { name: '华北大区', revenue: 2510, cost: 1760, profit: 750, margin: 0.299 },
+    { name: '西南大区', revenue: 1430, cost: 980, profit: 450, margin: 0.315 },
+    { name: '海外事业部', revenue: 800, cost: 520, profit: 280, margin: 0.35 },
+  ]
+  const detailTable: TableControl = {
+    id: 'fr-detail',
+    type: 'table',
+    left: 0,
+    top: tableTop,
+    width: w,
+    height: 56,
+    printable: true,
+    data: detailRows,
+    columns: [
+      { title: '分部', field: 'name', width: 40, align: 'left', headerAlign: 'center' },
+      { title: '营收（万元）', field: 'revenue', width: 36, align: 'right', headerAlign: 'center', format: { kind: 'int' } },
+      { title: '成本（万元）', field: 'cost', width: 36, align: 'right', headerAlign: 'center', format: { kind: 'int' } },
+      { title: '利润（万元）', field: 'profit', width: 34, align: 'right', headerAlign: 'center', format: { kind: 'int' } },
+      { title: '利润率', field: 'margin', width: 40, align: 'right', headerAlign: 'center', format: { kind: 'percent', digits: 1 } },
+    ],
+    options: {
+      repeatHeader: true,
+      pageRows: 'auto',
+      rowHeightMode: 'auto',
+      borders: 'three-line',
+      tableStyle: 'report',
+      verticalAlign: 'middle',
+      summaryRow: {
+        type: 'custom',
+        fields: ['revenue', 'cost', 'profit', 'margin'],
+        label: '合计',
+        expressions: {
+          revenue: 'sum.revenue',
+          cost: 'sum.cost',
+          profit: 'sum.profit',
+          margin: 'sum.profit / sum.revenue',
+        },
+      },
+    },
+  }
+
+  /* —— 说明 —— */
+  const noteTop = tableTop + 56 + 6
+  const notes: AnyControl[] = [
+    box('fr-note-bg', 0, noteTop, w, 22, '#fafafa', '#e8e8e8', 4),
+    txt('fr-note-title', 4, noteTop + 3, w - 8, 5, '指标说明', { fontSize: 9, fontWeight: 'bold', fill: '#333333' }),
+    txt(
+      'fr-note-1',
+      4,
+      noteTop + 9,
+      w - 8,
+      4,
+      '1）金额单位均为万元；2）营业利润 = 营收 − 成本（分部合计 4,300 万元）；',
+      { fontSize: 8, fill: '#555555' },
+    ),
+    txt(
+      'fr-note-2',
+      4,
+      noteTop + 14,
+      w - 8,
+      4,
+      '3）净利润 2,180 万元（归母净利润，已扣所得税及少数股东损益）；4）增长率对比 2025 年同期。',
+      { fontSize: 8, fill: '#555555' },
+    ),
+  ]
+
+  const body: AnyControl[] = [...cards, ...charts, detailTable, ...notes]
+
+  /* —— 页脚 —— */
+  const footer: AnyControl[] = [
+    txt('fr-brand', 0, 3, 90, 6, '本报表由 OpenPrint 生成', { fontSize: 8, fill: '#888888' }),
+    txt('fr-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
+  ]
+
+  return fullPage(paper(210, 297), header, body, footer)
 }
 
 /* ------------------------------ 模板定义 ------------------------------ */
@@ -273,6 +516,18 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
       ]
       return fullPage(paper(148, 210, { top: 8, bottom: 8 }), header, body)
     },
+  },
+
+  /* ============ 报表（A4 · 图表 + 内嵌数据） ============ */
+  {
+    id: 'market-financial-report',
+    name: '精美财务分析报表',
+    category: 'report',
+    desc: 'A4 财务分析报表：4 张 KPI 指标卡 + 柱状/环形/折线三张矢量图表 + 分部经营明细表（内嵌数据，自带合计），开箱即用无需绑定数据源',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: buildFinancialReport,
   },
 
   /* ============ 小票（58 / 80 热敏） ============ */

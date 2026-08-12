@@ -48,7 +48,7 @@ const DEFAULT_PAGE: PageSetup = {
 }
 
 /** 画布网格默认配置（运行时视图状态，辅助设计，不持久化） */
-const DEFAULT_GRID: GridConfig = { visible: false, sizeMm: 5, color: 'rgba(120,130,145,0.5)' }
+const DEFAULT_GRID: GridConfig = { visible: false, sizeMm: 5, color: '#78829180' }
 
 export const useDesignerStore = defineStore('designer', () => {
   /* ------------------------------- 状态 ------------------------------- */
