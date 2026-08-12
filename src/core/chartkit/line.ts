@@ -4,7 +4,7 @@
  * 多序列折线 + 坐标轴 + 可选网格 + 图例 + 数据标签。
  * 支持 smooth（Catmull-Rom 平滑曲线）与 area（折线下方面积填充）。
  */
-import { escapeXml, fmt, niceMax, seriesColor, truncate, legendStartX, xAxisLabelPos } from './core'
+import { escapeXml, fmt, niceMax, seriesColor, truncate, legendStartX } from './core'
 import type { ChartModel } from './types'
 
 interface Pt { x: number; y: number }
@@ -43,7 +43,7 @@ export function renderLine(model: ChartModel): string {
   const titleH = title ? 22 : 0
   const mTop = 10 + titleH
   const mRight = 16
-  const mBottom = (showAxis ? 34 : 18) + legendH
+  const mBottom = (showAxis ? 38 : 22) + legendH
   const mLeft = showAxis ? 44 : 16
 
   const px0 = mLeft
@@ -101,8 +101,8 @@ export function renderLine(model: ChartModel): string {
     parts.push(`<line x1="${px0}" y1="${py1}" x2="${px1}" y2="${py1}" stroke="#cccccc" stroke-width="1"/>`)
     for (let c = 0; c < n; c++) {
       const x = px0 + band * (c + 0.5)
-      const pos = xAxisLabelPos(opt.labelAlign, px0 + band * c, px0 + band * (c + 1), x)
-      parts.push(`<text x="${pos.x.toFixed(1)}" y="${(py1 + 14).toFixed(1)}" text-anchor="${pos.anchor}" font-size="10" fill="#5a6068">${escapeXml(truncate(String(cats[c] ?? '')))}</text>`)
+      // x 轴类目标签：始终以类目为基准居中于对应点正下方，并与图表留一点间距
+      parts.push(`<text x="${x.toFixed(1)}" y="${(py1 + 18).toFixed(1)}" text-anchor="middle" font-size="10" fill="#5a6068">${escapeXml(truncate(String(cats[c] ?? '')))}</text>`)
     }
   }
 
@@ -132,7 +132,7 @@ export function renderLine(model: ChartModel): string {
   }
 
   if (showLegend) {
-    const align = opt.labelAlign ?? 'left'
+    const align = opt.labelAlign ?? 'center'
     let totalW = 0
     for (let s = 0; s < seriesPts.length; s++) {
       const name = seriesPts[s]!.name || `系列${s + 1}`
@@ -140,7 +140,7 @@ export function renderLine(model: ChartModel): string {
     }
     const startX = legendStartX(align, W, totalW, px0)
     let lx = startX
-    let ly = py1 + (showAxis ? 24 : 10)
+    let ly = py1 + (showAxis ? 30 : 16)
     for (let s = 0; s < seriesPts.length; s++) {
       const name = seriesPts[s]!.name || `系列${s + 1}`
       const color = seriesPts[s]!.color

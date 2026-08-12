@@ -117,15 +117,3 @@ export function legendStartX(
   if (align === 'right') return Math.max(leftPad, W - totalW - 8)
   return leftPad
 }
-
-/** x 轴类目标签的水平对齐 → SVG text-anchor 与基准 x */
-export function xAxisLabelPos(
-  align: 'left' | 'center' | 'right' | undefined,
-  bandLeft: number,
-  bandRight: number,
-  bandCenter: number,
-): { x: number; anchor: 'start' | 'middle' | 'end' } {
-  if (align === 'left') return { x: bandLeft + 4, anchor: 'start' }
-  if (align === 'right') return { x: bandRight - 4, anchor: 'end' }
-  return { x: bandCenter, anchor: 'middle' }
-}

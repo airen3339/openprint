@@ -63,7 +63,7 @@ export function renderPie(model: ChartModel): string {
   }
 
   if (showLegend) {
-    const align = opt.labelAlign ?? 'left'
+    const align = opt.labelAlign ?? 'center'
     let totalW = 0
     for (let i = 0; i < data.length; i++) {
       const name = cats[i] ?? `类目${i + 1}`

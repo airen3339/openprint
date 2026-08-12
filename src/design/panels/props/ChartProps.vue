@@ -113,7 +113,7 @@ const valueLabel = computed({
   set: (v: boolean) => patchOption('valueLabel', v),
 })
 const labelAlign = computed({
-  get: () => control.value?.options?.labelAlign ?? 'left',
+  get: () => control.value?.options?.labelAlign ?? 'center',
   set: (v: 'left' | 'center' | 'right') => patchOption('labelAlign', v),
 })
 const smooth = computed({
@@ -220,7 +220,7 @@ const donut = computed({
       <NSwitch size="small" :value="valueLabel" @update:value="valueLabel = $event" />
     </div>
     <div class="props-row">
-      <span class="props-label">标签对齐</span>
+      <span class="props-label">图例对齐</span>
       <NSelect
         size="small"
         :value="labelAlign"

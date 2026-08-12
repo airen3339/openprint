@@ -4,7 +4,7 @@
  * 输出一串 <rect>（按序列分组并排）+ 坐标轴 + 可选网格 + 图例 + 数据标签。
  * 全部用逻辑坐标（viewBox），实际尺寸由外层容器缩放，矢量清晰。
  */
-import { escapeXml, fmt, niceMax, seriesColor, truncate, legendStartX, xAxisLabelPos } from './core'
+import { escapeXml, fmt, niceMax, seriesColor, truncate, legendStartX } from './core'
 import type { ChartModel } from './types'
 
 export function renderBar(model: ChartModel): string {
@@ -21,7 +21,7 @@ export function renderBar(model: ChartModel): string {
   const titleH = title ? 22 : 0
   const mTop = 10 + titleH
   const mRight = 16
-  const mBottom = (showAxis ? 34 : 18) + legendH
+  const mBottom = (showAxis ? 38 : 22) + legendH
   const mLeft = showAxis ? 44 : 16
 
   const px0 = mLeft
@@ -86,16 +86,15 @@ export function renderBar(model: ChartModel): string {
         parts.push(`<text x="${(x + barW * 0.45).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="#5a6068">${fmt(val)}</text>`)
       }
     }
-    // x 轴标签
+    // x 轴标签：始终以类目为基准居中于对应条带正下方，并与图表留一点间距
     if (showAxis) {
-      const pos = xAxisLabelPos(opt.labelAlign, px0 + band * c, px0 + band * (c + 1), cx)
-      parts.push(`<text x="${pos.x.toFixed(1)}" y="${(py1 + 14).toFixed(1)}" text-anchor="${pos.anchor}" font-size="10" fill="#5a6068">${escapeXml(truncate(String(cats[c] ?? '')))}</text>`)
+      parts.push(`<text x="${cx.toFixed(1)}" y="${(py1 + 18).toFixed(1)}" text-anchor="middle" font-size="10" fill="#5a6068">${escapeXml(truncate(String(cats[c] ?? '')))}</text>`)
     }
   }
 
   // 图例
   if (showLegend) {
-    const align = opt.labelAlign ?? 'left'
+    const align = opt.labelAlign ?? 'center'
     let totalW = 0
     for (let s = 0; s < sCount; s++) {
       const name = model.series[s]!.name || `系列${s + 1}`
@@ -103,7 +102,7 @@ export function renderBar(model: ChartModel): string {
     }
     const startX = legendStartX(align, W, totalW, px0)
     let lx = startX
-    let ly = py1 + (showAxis ? 24 : 10)
+    let ly = py1 + (showAxis ? 30 : 16)
     for (let s = 0; s < sCount; s++) {
       const name = model.series[s]!.name || `系列${s + 1}`
       const color = seriesColor(model.series[s]!, s, opt)
