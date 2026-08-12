@@ -1,0 +1,873 @@
+/**
+ * CanvasDesigner —— Fabric 画布内核
+ *
+ * 职责：画布初始化 / 页面（A4 白纸）/ 缩放平移 / 控件增删改 / 选中事件 / 序列化。
+ * 坐标约定（《标尺与辅助系统》§4.3）：
+ * - 页面左上角 = 画布坐标 (0,0)，zoom=1 时 1mm = MM_TO_PX px
+ * - 居中/平移/缩放全部走 viewportTransform，标尺层直接读 vt[4]/vt[5] + zoom
+ * - 协议层坐标：body 控件相对"页边距内容区"左上角；zone 子控件相对色带左上角（§5.14.2）
+ */
+import { Canvas, Rect, Line, Point, FabricObject, Text, Pattern, type TPointerEventInfo } from 'fabric'
+import type { AnyControl, ZoneControl } from '@/types/control'
+import type { PageSetup, WatermarkConfig } from '@/types/template'
+import { MM_TO_PX, ZOOM_MAX, ZOOM_MIN } from '@/utils/constants'
+import { toMm } from '@/core/units'
+import { createFabricControl, isPrintObject, PrintText, PrintZone, type IPrintObject } from './controls'
+import { SmartGuides } from './guides/SmartGuides'
+import { PrintTable } from './controls/PrintTable'
+import { ensureCells } from '@/core/layout-engine/table-cells'
+import { computeGridLayout, hitTestCell } from './table-design-render'
+import { computePhysicalPageCount } from './page-geometry'
+import { pageGapPx, modelTopToCanvasY, canvasYToModelTop } from './page-gap'
+import type { TableControl } from '@/types/control'
+
+export interface ViewportState {
+  zoom: number
+  offsetX: number
+  offsetY: number
+}
+
+export interface CanvasDesignerEvents {
+  /** 选中变化（controlId 列表；空数组 = 取消选中） */
+  onSelectionChange?: (ids: string[]) => void
+  /** 控件几何/属性被画布交互修改（拖拽/缩放手柄结束） */
+  onObjectModified?: (control: AnyControl) => void
+  /** 视口变化（缩放/平移），驱动标尺重绘 */
+  onViewportChange?: (vp: ViewportState) => void
+  /** 双击表格单元格进入编辑：返回物化了 cells 的控件与命中行列 */
+  onCellEdit?: (info: { controlId: string; control: AnyControl; row: number; col: number }) => void
+  /**
+   * 画布变换心跳：对象拖拽/缩放/旋转或视口变化时触发。
+   * 表格 HTML overlay 靠它重算定位（不走 store 直连，避免 store ↔ 画布循环依赖）。
+   */
+  onTransformTick?: () => void
+  /** 物理页数变化（内容推导或手动分页触发），驱动右侧页面面板刷新 */
+  onPageCountChange?: (count: number) => void
+}
+
+type PrintFabricObject = FabricObject & IPrintObject
+
+export class CanvasDesigner {
+  canvas!: Canvas
+  /** 页面尺寸（mm，内部统一换算） */
+  pageWidthMm = 210
+  pageHeightMm = 297
+  marginMm = { top: 10, bottom: 10, left: 10, right: 10 }
+
+  private pageRect!: Rect
+  /** 第 2..N 页白色背景（与 pageRect 同款，按 stride 堆叠） */
+  private extraPageRects: Rect[] = []
+  /** 每页内容区参考线（蓝色虚线矩形，非交互、不导出） */
+  private pageGuides: Rect[] = []
+  /** 每页内容区底部的分页虚线（红色，与渲染 floor(top/bodyH) 落页边界一致） */
+  private pageBreaks: Line[] = []
+  /** 分页线标签（"分页"）与每页页码标签（"第 N 页"） */
+  private pageLabels: Text[] = []
+  /** 当前文档物理页数 = max(内容推导页数, 手动分页 minPages)，最小 1 */
+  private pageCount = 1
+  /** 手动分页下限：用户「加页/减页」调整；0 = 完全由内容推导 */
+  private minPages = 0
+  /**
+   * 页间视觉间距（px，仅设计态）：上下两页之间留白，便于分辨页边界。
+   * 只作用在画布坐标（模型 mm 保持 flush，导出/渲染不变）。
+   */
+  private readonly PAGE_GAP_PX = 24
+  private smartGuides?: SmartGuides
+  /** 水印装饰层（非交互、不导出、不进序列化），随页面尺寸/配置重建 */
+  private watermarkObjs: FabricObject[] = []
+  private lastWatermark?: WatermarkConfig
+  private events: CanvasDesignerEvents = {}
+  private spacePanning = false
+  /** 用户手动缩放后置 true，窗口 resize 不再自动 refit */
+  private userZoomed = false
+
+  /** 初始化画布。container 决定画布像素尺寸（ ResizeObserver 自适应） */
+  init(el: HTMLCanvasElement, container: HTMLElement, events: CanvasDesignerEvents = {}): void {
+    this.events = events
+    // Fabric 7 默认 origin 为 center——全局改回 left/top，协议坐标语义保持一致
+    FabricObject.ownDefaults.originX = 'left'
+    FabricObject.ownDefaults.originY = 'top'
+    this.canvas = new Canvas(el, {
+      width: container.clientWidth,
+      height: container.clientHeight,
+      backgroundColor: '#e8eaed',
+      preserveObjectStacking: true,
+      selection: true,
+      stopContextMenu: true,
+      fireRightClick: true,
+    })
+
+    this.buildPage()
+    this.fitToContainer(container)
+    this.bindEvents()
+
+    this.smartGuides = new SmartGuides(this.canvas, () => this.pageRect, () => this.marginMm)
+
+    new ResizeObserver(() => {
+      this.canvas.setDimensions({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      })
+      // 布局稳定前（面板展开/窗口调整）保持适配；用户手动缩放后不再打扰
+      if (!this.userZoomed) this.fitToContainer(container)
+      this.canvas.requestRenderAll()
+      this.emitViewport()
+    }).observe(container)
+  }
+
+  dispose(): void {
+    window.removeEventListener('keydown', this.onKeyDown)
+    window.removeEventListener('keyup', this.onKeyUp)
+    this.smartGuides?.dispose()
+    void this.canvas.dispose()
+  }
+
+  /* -------------------------------- 页面 -------------------------------- */
+
+  private buildPage(): void {
+    this.pageRect = new Rect({
+      left: 0,
+      top: 0,
+      width: this.pageWidthMm * MM_TO_PX,
+      height: this.pageHeightMm * MM_TO_PX,
+      fill: this.lastPageBackground || '#ffffff',
+      selectable: false,
+      evented: false,
+      hoverCursor: 'default',
+      shadow: '0 2px 12px rgba(0,0,0,0.15)',
+      // 标记：序列化/选中时排除
+      excludeFromExport: true,
+    } as never)
+    ;(this.pageRect as unknown as { isPageRect: boolean }).isPageRect = true
+    this.canvas.add(this.pageRect)
+    this.pageRect.canvas = this.canvas
+    // 首次构建后按当前内容推导页数并铺好分页线 / 参考线 / 页码
+    this.rebuildPages()
+  }
+
+  /** 记忆最近一次背景色（buildPage 首帧用） */
+  private lastPageBackground = '#ffffff'
+
+  /* ------------------------ 页间留白（模型 mm 与画布 px 换算） ------------------------ */
+  // 复用 page-gap.ts 纯函数，避免实现与 page-gap.spec.ts 测试逻辑分叉（单一真相来源）。
+
+  /** 模型 top(mm, flush) 所在页索引 → 该页之前的累计页间距(px) */
+  private gapPx(topMm: number): number {
+    return pageGapPx(topMm, this.pageHeightMm, this.PAGE_GAP_PX)
+  }
+
+  /** 模型 top(mm, flush) → 画布绝对 y(px)：页边距 + 页内偏移 + 累计页间距 */
+  private modelTopToY(topMm: number): number {
+    return modelTopToCanvasY(topMm, this.marginMm.top * MM_TO_PX, this.pageHeightMm, this.PAGE_GAP_PX)
+  }
+
+  /** 画布绝对 y(px) → 模型 top(mm, flush)：反解累计页间距（近页边界最多迭代 2 次收敛） */
+  private yToModelTop(y: number): number {
+    return canvasYToModelTop(y, this.marginMm.top * MM_TO_PX, this.pageHeightMm, this.PAGE_GAP_PX)
+  }
+
+  /* -------------------------------- 页面 -------------------------------- */
+
+  /**
+   * 由正文控件最低底部推导物理页数：floor(maxBottomMm / pageHeightMm) + 1。
+   * 与渲染端 layoutStaticOnly 的 `floor(top/bodyH)` 落页口径一致（body 控件按
+   * marginTop + top 绝对定位，越过内容区底部即落入下一页）。
+   */
+  private computeContentPageCount(): number {
+    let maxBottomMm = 0
+    for (const obj of this.getPrintObjects()) {
+      if (obj instanceof PrintZone) continue
+      // 模型 mm（flush）口径：先反解页间距再算底部，与渲染/导出一致
+      const topMm = this.yToModelTop(obj.top ?? 0)
+      const bottom = topMm + obj.getScaledHeight() / MM_TO_PX
+      if (bottom > maxBottomMm) maxBottomMm = bottom
+    }
+    return computePhysicalPageCount(maxBottomMm, this.pageHeightMm)
+  }
+
+  /** 有效物理页数 = max(内容推导, 手动分页下限)，最小 1 */
+  private computePageCount(): number {
+    return Math.max(this.minPages, this.computeContentPageCount())
+  }
+
+  /** 内容推导页数（不含手动分页），供 store 的「加页」计算 */
+  get contentPageCount(): number {
+    return this.computeContentPageCount()
+  }
+
+  /** 当前有效物理页数 */
+  get effectivePageCount(): number {
+    return this.pageCount
+  }
+
+  /** 手动分页下限（0 = 完全由内容推导） */
+  get manualPageCount(): number {
+    return this.minPages
+  }
+
+  /** 设置手动分页下限并重建页面视觉 */
+  setManualPageCount(n: number): void {
+    this.minPages = Math.max(0, Math.floor(n) || 0)
+    this.rebuildPages()
+  }
+
+  /**
+   * 依据正文控件布局重建多页视觉：第 2..N 页白色背景、每页内容区参考线、
+   * 内容区底部的分页虚线 + 「分页」标签、每页「第 N 页」页码标签。
+   * 背景/参考线/分页线全部排在控件下方（控件 bringToFront），避免遮挡正文。
+   */
+  private rebuildPages(): void {
+    const count = Math.max(1, this.computePageCount())
+    const changed = count !== this.pageCount
+    this.pageCount = count
+    const stale = [
+      ...this.extraPageRects,
+      ...this.pageGuides,
+      ...this.pageBreaks,
+      ...this.pageLabels,
+    ]
+    for (const o of stale) this.canvas.remove(o)
+    this.extraPageRects = []
+    this.pageGuides = []
+    this.pageBreaks = []
+    this.pageLabels = []
+
+    const pageW = this.pageWidthMm * MM_TO_PX
+    const pageH = this.pageHeightMm * MM_TO_PX
+    const stride = pageH + this.PAGE_GAP_PX
+    const ml = this.marginMm.left * MM_TO_PX
+    const mt = this.marginMm.top * MM_TO_PX
+    const mr = this.marginMm.right * MM_TO_PX
+    const mb = this.marginMm.bottom * MM_TO_PX
+    const bodyH = Math.max(1, pageH - mt - mb)
+    const contentW = Math.max(1, pageW - ml - mr)
+    const bg = this.lastPageBackground || '#ffffff'
+
+    // 第 2..N 页背景（按 stride 堆叠，带阴影）
+    for (let i = 1; i < count; i++) {
+      const r = new Rect({
+        left: 0,
+        top: i * stride,
+        width: pageW,
+        height: pageH,
+        fill: bg,
+        selectable: false,
+        evented: false,
+        hoverCursor: 'default',
+        shadow: '0 2px 12px rgba(0,0,0,0.15)',
+        excludeFromExport: true,
+        objectCaching: false,
+      } as never)
+      ;(r as unknown as { isPageRect: boolean }).isPageRect = true
+      this.canvas.add(r)
+      this.extraPageRects.push(r)
+    }
+
+    // 每页内容区参考线（蓝色虚线）
+    for (let i = 0; i < count; i++) {
+      const g = new Rect({
+        left: ml,
+        top: i * stride + mt,
+        width: contentW,
+        height: bodyH,
+        fill: '',
+        stroke: '#1677ff',
+        strokeWidth: 1,
+        strokeDashArray: [4, 3],
+        selectable: false,
+        evented: false,
+        hoverCursor: 'default',
+        excludeFromExport: true,
+        objectCaching: false,
+      } as never)
+      ;(g as unknown as { isMarginGuide: boolean }).isMarginGuide = true
+      this.canvas.add(g)
+      this.pageGuides.push(g)
+    }
+
+    // 每页内容区底部的分页虚线（最后一页不画），并标注「分页」
+    for (let i = 0; i < count - 1; i++) {
+      const y = i * stride + mt + bodyH
+      const line = new Line([ml, y, ml + contentW, y], {
+        stroke: '#f5222d',
+        strokeWidth: 1,
+        strokeDashArray: [6, 4],
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+        objectCaching: false,
+      } as never)
+      this.canvas.add(line)
+      this.pageBreaks.push(line)
+      const tag = new Text('分页', {
+        left: ml + 4,
+        top: y - 13,
+        fontSize: 9,
+        fill: '#f5222d',
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+      } as never)
+      this.canvas.add(tag)
+      this.pageLabels.push(tag)
+    }
+
+    // 每页页码标签（左上角）
+    for (let i = 0; i < count; i++) {
+      const lbl = new Text(`第 ${i + 1} 页`, {
+        left: ml + 4,
+        top: i * stride + 4,
+        fontSize: 9,
+        fill: '#999999',
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+      } as never)
+      this.canvas.add(lbl)
+      this.pageLabels.push(lbl)
+    }
+
+    // 【层级修复】背景/参考线/分页线全部排在正文控件之下，杜绝「第二页盖住控件」
+    for (const obj of this.getPrintObjects()) this.canvas.bringObjectToFront(obj)
+
+    this.canvas.requestRenderAll()
+    if (changed) this.events.onPageCountChange?.(count)
+  }
+
+  /** 正文控件布局变化后由外部调用，重算页数与分页线 */
+  refreshPages(): void {
+    this.rebuildPages()
+  }
+
+  /** 显示/隐藏页边距参考线（影响全部页） */
+  setMarginGuidesVisible(visible: boolean): void {
+    for (const g of this.pageGuides) g.visible = visible
+    this.canvas.requestRenderAll()
+  }
+
+  /**
+   * 应用页面设置。
+   * 【约定】PageSetup.width/height 一律是**物理尺寸**（实际打印宽高，横向时宽>高），
+   * orientation 仅是派生标志（UI 用）。方向切换由面板在改 width/height 时完成，
+   * 这里**不再**按 orientation 二次交换 —— 否则横向页会被换回纵向（旧 bug）。
+   * 渲染端 computePageMetrics / 导出 export-pdf 同口径（w>h 判定），全链路所见即所得。
+   */
+  setPage(setup: PageSetup): void {
+    this.pageWidthMm = toMm(setup.width, setup.unit)
+    this.pageHeightMm = toMm(setup.height, setup.unit)
+    this.marginMm = {
+      top: toMm(setup.margin.top, setup.unit),
+      bottom: toMm(setup.margin.bottom, setup.unit),
+      left: toMm(setup.margin.left, setup.unit),
+      right: toMm(setup.margin.right, setup.unit),
+    }
+    this.minPages = setup.minPages ?? 0
+    this.pageRect.set({
+      width: this.pageWidthMm * MM_TO_PX,
+      height: this.pageHeightMm * MM_TO_PX,
+      fill: this.lastPageBackground || '#ffffff',
+    })
+    // 页面尺寸变化：重建全部页视觉（背景/参考线/分页线/页码）后再注入水印
+    this.rebuildPages()
+    for (const z of this.getZones()) z.relayout(this.pageWidthMm, this.pageHeightMm)
+    this.syncWatermark()
+    this.canvas.requestRenderAll()
+  }
+
+  /** 设置画布页面背景色（不导出、随模板持久化）；同步填充所有页 */
+  setPageBackground(color: string): void {
+    this.lastPageBackground = color || '#ffffff'
+    this.pageRect.set({ fill: this.lastPageBackground })
+    for (const r of this.extraPageRects) r.set({ fill: this.lastPageBackground })
+    this.canvas.requestRenderAll()
+  }
+
+  /** 设置画布水印（enabled=false 时清空；tile=全页平铺 / 否则居中单个） */
+  setWatermark(cfg: WatermarkConfig | undefined): void {
+    this.lastWatermark = cfg && cfg.enabled ? cfg : undefined
+    this.syncWatermark()
+  }
+
+  /** 重建水印装饰层：先清旧对象，再按配置绘制 */
+  private syncWatermark(): void {
+    for (const o of this.watermarkObjs) this.canvas.remove(o)
+    this.watermarkObjs = []
+    const cfg = this.lastWatermark
+    if (!cfg) {
+      this.canvas.requestRenderAll()
+      return
+    }
+
+    const pageWpx = this.pageWidthMm * MM_TO_PX
+    const pageHpx = this.pageHeightMm * MM_TO_PX
+    const fontSizePx = Math.max(1, cfg.fontSize) * MM_TO_PX
+    const fontFamily = '"Source Han Sans CN", "PingFang SC", sans-serif'
+
+    if (cfg.tile) {
+      // 全页平铺：用离屏 canvas 生成单个旋转水印瓦片，作为 pageRect 之上的 Pattern
+      const spacingMm = Math.max(cfg.fontSize * 2.6, 14)
+      const tilePx = Math.max(1, Math.ceil(spacingMm * MM_TO_PX))
+      const tile = document.createElement('canvas')
+      tile.width = tilePx
+      tile.height = tilePx
+      const ctx = tile.getContext('2d')
+      if (ctx) {
+        ctx.clearRect(0, 0, tilePx, tilePx)
+        ctx.translate(tilePx / 2, tilePx / 2)
+        ctx.rotate((cfg.rotation * Math.PI) / 180)
+        ctx.fillStyle = cfg.color
+        ctx.font = `${fontSizePx}px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(cfg.text || '', 0, 0)
+      }
+      const pattern = new Pattern({ source: tile, repeat: 'repeat' })
+      const rect = new Rect({
+        left: 0,
+        top: 0,
+        width: pageWpx,
+        height: pageHpx,
+        fill: pattern as unknown as string,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+        objectCaching: false,
+      } as never)
+      ;(rect as unknown as { isWatermark: boolean }).isWatermark = true
+      this.canvas.insertAt(1, rect)
+      this.watermarkObjs.push(rect)
+    } else {
+      // 居中单个
+      const text = new Text(cfg.text || ' ', {
+        left: pageWpx / 2,
+        top: pageHpx / 2,
+        originX: 'center',
+        originY: 'center',
+        fontSize: fontSizePx,
+        fill: cfg.color,
+        fontFamily,
+        angle: cfg.rotation,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+      } as never)
+      ;(text as unknown as { isWatermark: boolean }).isWatermark = true
+      this.canvas.insertAt(1, text)
+      this.watermarkObjs.push(text)
+    }
+
+    this.canvas.requestRenderAll()
+  }
+
+  /** 页边距内容区左上角（画布 px）—— body 控件协议坐标的原点 */
+  get contentOriginPx(): { x: number; y: number } {
+    return { x: this.marginMm.left * MM_TO_PX, y: this.marginMm.top * MM_TO_PX }
+  }
+
+  /* ------------------------------- 控件 CRUD ------------------------------ */
+
+  getPrintObjects(): PrintFabricObject[] {
+    return this.canvas.getObjects().filter(isPrintObject) as PrintFabricObject[]
+  }
+
+  getControlById(id: string): PrintFabricObject | undefined {
+    return this.getPrintObjects().find((o) => o.controlId === id)
+  }
+
+  getZones(): PrintZone[] {
+    return this.getPrintObjects().filter((o): o is PrintZone => o instanceof PrintZone)
+  }
+
+  hasZone(zone: 'header' | 'footer'): boolean {
+    return this.getZones().some((z) => z.zone === zone)
+  }
+
+  addControl(
+    control: AnyControl,
+    opts: { select?: boolean; zoneHostId?: string } = {},
+  ): void {
+    const obj = createFabricControl(control, {
+      widthMm: this.pageWidthMm,
+      heightMm: this.pageHeightMm,
+    })
+    // 协议坐标（相对内容区/所属色带）→ 画布绝对坐标
+    this.applySectionOrigin(obj, control, opts.zoneHostId)
+    // 镜像「常驻辅助线」开关到 Fabric 对象，供 SmartGuides 读取
+    ;(obj as unknown as { showGuides: boolean }).showGuides = control.showGuides ?? false
+    this.canvas.add(obj)
+    if (opts.select ?? true) this.canvas.setActiveObject(obj)
+    this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  /** 清空全部控件（保留页面矩形），加载模板前调用 */
+  clearControls(): void {
+    for (const obj of this.getPrintObjects()) this.canvas.remove(obj)
+    this.canvas.discardActiveObject()
+    this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  /** body 控件加内容区偏移（含页间距）；zone 子控件加所属色带偏移（MVP：按几何中心归属） */
+  private applySectionOrigin(
+    obj: PrintFabricObject,
+    control: AnyControl,
+    zoneHostId?: string,
+  ): void {
+    if (control.type === 'zone') return
+    if (zoneHostId) {
+      const host = this.getControlById(zoneHostId)
+      if (host) {
+        // zone 子控件：相对色带左上角，无页间距
+        obj.set({
+          left: (Number.isFinite(obj.left) ? obj.left! : 0) + (host.left ?? 0),
+          top: (Number.isFinite(obj.top) ? obj.top! : 0) + (host.top ?? 0),
+        })
+      }
+    } else {
+      // body 控件：obj.top 此刻是 mm→px（相对页顶），modelTopToY 叠加内容区偏移与页间距
+      obj.set({
+        left: (Number.isFinite(obj.left) ? obj.left! : 0) + this.contentOriginPx.x,
+        top: this.modelTopToY((obj.top ?? 0) / MM_TO_PX),
+      })
+    }
+    obj.setCoords()
+  }
+
+  updateControl(control: AnyControl): void {
+    const obj = this.getControlById(control.id)
+    if (!obj) return
+    if (control.type !== 'zone') {
+      // 几何同步：协议 mm（相对内容区/所属色带）→ 画布绝对 px（含页间距）
+      const origin = this.originFor(obj)
+      obj.set({
+        left: origin.x + control.left * MM_TO_PX,
+        top: origin.y + control.top * MM_TO_PX + (obj instanceof PrintZone ? 0 : this.gapPx(control.top)),
+        angle: control.angle ?? 0,
+      })
+      if (obj instanceof PrintText) {
+        // 文本框：直接改宽度重排文字，不缩放字形
+        obj.set({ width: control.width * MM_TO_PX, scaleX: 1, scaleY: 1 })
+      } else if (obj.width && obj.height) {
+        // 其余控件：按目标尺寸等比缩放（Group/Line/位图均适用）
+        obj.set({
+          scaleX: (control.width * MM_TO_PX) / obj.width,
+          scaleY: (control.height * MM_TO_PX) / obj.height,
+        })
+      }
+      obj.setCoords()
+    }
+    ;(obj as IPrintObject).applyControlProps(control)
+    // 同步「常驻辅助线」开关到 Fabric 对象（控制面板实时切换即生效）
+    ;(obj as unknown as { showGuides: boolean }).showGuides = control.showGuides ?? false
+    this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  /** 几何中心落在哪个色带内（§5.14.2 子控件坐标相对色带左上角） */
+  private hostZoneOf(obj: PrintFabricObject): PrintZone | undefined {
+    if (obj instanceof PrintZone) return undefined
+    const center = obj.getCenterPoint()
+    return this.getZones().find((z) => {
+      const b = z.getBoundingRect()
+      return (
+        center.x >= b.left && center.x <= b.left + b.width && center.y >= b.top && center.y <= b.top + b.height
+      )
+    })
+  }
+
+  /** 对象协议坐标原点：zone 子控件用色带左上角，其余用页边距内容区左上角 */
+  private originFor(obj: PrintFabricObject): { x: number; y: number } {
+    const host = this.hostZoneOf(obj)
+    if (host) return { x: host.left ?? 0, y: host.top ?? 0 }
+    return this.contentOriginPx
+  }
+
+  /**
+   * 读取 Fabric 对象为**协议控件**。
+   *
+   * 【重要】`obj.toControl()` 返回的 left/top 是 **Fabric 绝对画布坐标**，
+   * 而协议层 / store 模型一律是「相对内容区（或所属色带）左上角」的 mm。
+   * 任何要把画布状态写回 store 的路径都必须走本方法归一化，否则 `updateControl()`
+   * 会再叠加一次 origin，导致控件每次操作都向右下平移一个页边距。
+   */
+  readControl(obj: PrintFabricObject): AnyControl {
+    const control = obj.toControl()
+    if (obj instanceof PrintZone || control.type === 'zone') return control
+    const host = this.hostZoneOf(obj)
+    const origin = host ? { x: host.left ?? 0, y: host.top ?? 0 } : this.contentOriginPx
+    const abs = (v: number | undefined): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+    const rel = (v: number, o: number): number => Math.round(((v - o) / MM_TO_PX) * 100) / 100
+    const left = rel(abs(obj.left), origin.x)
+    // body 控件反解页间距（zone 子控件相对色带，间距恒为 0）
+    const top = host ? rel(abs(obj.top), origin.y) : Math.round(this.yToModelTop(abs(obj.top)) * 100) / 100
+    // 色带子控件不允许溢出到色带上方/左侧
+    control.left = host ? Math.max(0, left) : left
+    control.top = host ? Math.max(0, top) : top
+    return control
+  }
+
+  removeControl(id: string): void {
+    const obj = this.getControlById(id)
+    if (!obj) return
+    this.canvas.remove(obj)
+    this.canvas.discardActiveObject()
+    this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  setActiveControl(id: string | null): void {
+    if (!id) {
+      this.canvas.discardActiveObject()
+    } else {
+      const obj = this.getControlById(id)
+      if (obj) this.canvas.setActiveObject(obj)
+    }
+    this.canvas.requestRenderAll()
+  }
+
+  /* ------------------------------- 序列化 -------------------------------- */
+
+  /**
+   * 导出当前画布为协议组件列表。
+   * zone 子控件归属判定：几何中心落在色带内（§5.14.2 子组件坐标相对色带左上角）。
+   */
+  serialize(): { body: AnyControl[]; zones: ZoneControl[] } {
+    const zones = this.getZones()
+    const zoneControls: ZoneControl[] = zones.map((z) => z.toControl())
+    const body: AnyControl[] = []
+
+    for (const obj of this.getPrintObjects()) {
+      if (obj instanceof PrintZone) continue
+      // readControl 已把几何归一化到「相对色带 / 相对内容区」
+      const control = this.readControl(obj)
+      const host = this.hostZoneOf(obj)
+      if (host) {
+        const zc = zoneControls.find((z) => z.zone === host.zone)
+        zc?.children.push(control)
+      } else {
+        body.push(control)
+      }
+    }
+    return { body, zones: zoneControls }
+  }
+
+  /* ------------------------------- 缩放平移 ------------------------------- */
+
+  get zoom(): number {
+    return this.canvas?.getZoom() ?? 1
+  }
+
+  setZoom(zoom: number, center?: Point): void {
+    this.userZoomed = true
+    const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom))
+    const point =
+      center ?? new Point(this.canvas.getWidth() / 2, this.canvas.getHeight() / 2)
+    this.canvas.zoomToPoint(point, z)
+    this.emitViewport()
+  }
+
+  zoomIn(): void {
+    this.setZoom(this.zoom + 0.25)
+  }
+
+  zoomOut(): void {
+    this.setZoom(this.zoom - 0.25)
+  }
+
+  /** 适配容器：按页宽适配（上限 200%），文档可整页容纳则垂直居中，否则顶部对齐以便向下滚动翻页 */
+  fitToContainer(container: HTMLElement): void {
+    const pageW = this.pageWidthMm * MM_TO_PX
+    const stride = this.pageHeightMm * MM_TO_PX + this.PAGE_GAP_PX
+    const docH = this.pageCount * stride
+    const zoom = Math.min((container.clientWidth - 96) / pageW, 2)
+    const vt = this.canvas.viewportTransform
+    vt[0] = vt[3] = zoom
+    vt[4] = (container.clientWidth - pageW * zoom) / 2
+    const usedH = docH * zoom
+    vt[5] = usedH <= container.clientHeight - 96 ? Math.max(48, (container.clientHeight - usedH) / 2) : 48
+    this.canvas.setViewportTransform(vt)
+    this.canvas.requestRenderAll()
+    this.emitViewport()
+  }
+
+  /** 滚动视口使第 index 页（0 起）顶部对齐到视口上方（顶部留 48px） */
+  scrollToPage(index: number): void {
+    const stride = (this.pageHeightMm * MM_TO_PX + this.PAGE_GAP_PX) * this.zoom
+    const vt = this.canvas.viewportTransform
+    const viewH = this.canvas.getHeight()
+    const docH = this.pageCount * stride
+    const topY = Math.max(0, Math.min(index, this.pageCount - 1)) * stride
+    let y = 48 - topY
+    // 约束：不滚出文档顶部 / 底部
+    const maxY = 48
+    const minY = Math.min(maxY, viewH - docH - 48)
+    vt[5] = Math.max(Math.min(y, maxY), minY)
+    this.canvas.setViewportTransform(vt)
+    this.canvas.requestRenderAll()
+    this.emitViewport()
+  }
+
+  getViewportState(): ViewportState {
+    const vt = this.canvas.viewportTransform
+    return { zoom: this.zoom, offsetX: vt[4] ?? 0, offsetY: vt[5] ?? 0 }
+  }
+
+  private emitViewport(): void {
+    this.events.onViewportChange?.(this.getViewportState())
+    // 视口变化同样需要驱动表格 HTML overlay 重定位
+    this.events.onTransformTick?.()
+  }
+
+  /* -------------------------------- 事件 -------------------------------- */
+
+  private bindEvents(): void {
+    const c = this.canvas
+
+    const emitSelection = () => {
+      const active = c.getActiveObjects().filter(isPrintObject) as PrintFabricObject[]
+      this.events.onSelectionChange?.(active.map((o) => o.controlId))
+    }
+    c.on('selection:created', emitSelection)
+    c.on('selection:updated', emitSelection)
+    c.on('selection:cleared', () => this.events.onSelectionChange?.([]))
+
+    // 对象变换 / 视口变化 → 驱动表格 HTML overlay 重定位
+    const bump = () => this.events.onTransformTick?.()
+    c.on('object:moving', bump)
+    c.on('object:scaling', bump)
+    c.on('object:rotating', bump)
+    c.on('object:modified', bump)
+    c.on('object:added', bump)
+    c.on('object:removed', bump)
+
+    // 双击单元格：进入原生 contenteditable 编辑（方案 A）
+    c.on('mouse:dblclick', (opt) => {
+      const target = opt.target
+      if (!(target instanceof PrintTable)) return
+      // 必须用 readControl（相对坐标），直接 toControl() 会把绝对坐标写进 store 导致漂移
+      const control = this.readControl(target) as TableControl
+      const ensured = ensureCells(control)
+      // 场景坐标 → 控件局部坐标（先平移到左上角原点，再反向旋转，最后归一化）
+      const dx = opt.scenePoint.x - (target.left ?? 0)
+      const dy = opt.scenePoint.y - (target.top ?? 0)
+      const rad = (-(target.angle ?? 0) * Math.PI) / 180
+      const localX = dx * Math.cos(rad) - dy * Math.sin(rad)
+      const localY = dx * Math.sin(rad) + dy * Math.cos(rad)
+      const hit = hitTestCell(
+        computeGridLayout(ensured),
+        localX / Math.max(1e-6, target.getScaledWidth()),
+        localY / Math.max(1e-6, target.getScaledHeight()),
+      )
+      if (!hit) return
+      this.events.onCellEdit?.({ controlId: target.controlId, control: ensured, row: hit.row, col: hit.col })
+    })
+
+    c.on('object:modified', (e) => {
+      const obj = e.target
+      if (!obj || !isPrintObject(obj)) return
+      if (obj instanceof PrintZone) {
+        // zone 只允许改高度：把位置吸附回页顶/页底
+        obj.relayout(this.pageWidthMm, this.pageHeightMm)
+      }
+      // 位图类控件缩放结束后按新尺寸重渲染，保证清晰
+      const regenerable = obj as Partial<{ regenerate: () => void }>
+      if (typeof regenerable.regenerate === 'function' && !(obj instanceof PrintZone)) {
+        const scaledW = obj.getScaledWidth()
+        const scaledH = obj.getScaledHeight()
+        obj.set({ width: scaledW, height: scaledH, scaleX: 1, scaleY: 1 })
+        regenerable.regenerate()
+      }
+      this.events.onObjectModified?.(this.readControl(obj))
+      // 移动/缩放结束后正文布局可能跨页，刷新页数与分页线
+      this.refreshPages()
+    })
+
+    // Ctrl/Cmd + 滚轮缩放；普通滚轮 = 垂直平移；Shift+滚轮 = 水平平移
+    c.on('mouse:wheel', (opt: TPointerEventInfo<WheelEvent>) => {
+      const e = opt.e
+      e.preventDefault()
+      e.stopPropagation()
+      const vt = c.viewportTransform
+      if (e.ctrlKey || e.metaKey) {
+        const delta = e.deltaY
+        const zoom = this.zoom * 0.999 ** delta
+        this.setZoom(zoom, new Point(e.offsetX, e.offsetY))
+      } else {
+        if (e.shiftKey) {
+          vt[4] = (vt[4] ?? 0) - e.deltaY
+        } else {
+          vt[5] = (vt[5] ?? 0) - e.deltaY
+          vt[4] = (vt[4] ?? 0) - e.deltaX
+        }
+        c.setViewportTransform(vt)
+        c.requestRenderAll()
+        this.emitViewport()
+      }
+    })
+
+    // 空格 + 拖拽 = 平移
+    c.on('mouse:down', (opt) => {
+      if (this.spacePanning) {
+        const e = opt.e as MouseEvent
+        c.selection = false
+        c.defaultCursor = 'grab'
+        let lastX = e.clientX
+        let lastY = e.clientY
+        const move = (ev: MouseEvent) => {
+          const vt = c.viewportTransform
+          vt[4] = (vt[4] ?? 0) + (ev.clientX - lastX)
+          vt[5] = (vt[5] ?? 0) + (ev.clientY - lastY)
+          lastX = ev.clientX
+          lastY = ev.clientY
+          c.setViewportTransform(vt)
+          c.requestRenderAll()
+          this.emitViewport()
+        }
+        const up = () => {
+          window.removeEventListener('mousemove', move)
+          window.removeEventListener('mouseup', up)
+          c.selection = true
+          c.defaultCursor = 'default'
+        }
+        window.addEventListener('mousemove', move)
+        window.addEventListener('mouseup', up)
+      }
+    })
+
+    window.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keyup', this.onKeyUp)
+  }
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (e.code === 'Space' && !this.isEditingText()) {
+      this.spacePanning = true
+      e.preventDefault()
+    }
+  }
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (e.code === 'Space') this.spacePanning = false
+  }
+
+  private isEditingText(): boolean {
+    const active = this.canvas.getActiveObject() as unknown as { isEditing?: boolean } | undefined
+    return !!active?.isEditing
+  }
+
+  /* ----------------------------- 网格控制 ------------------------------ */
+
+  setGridSize(sizeMm: number): void {
+    if (this.smartGuides) this.smartGuides.config.gridSizeMm = sizeMm
+  }
+
+  setGridColor(color: string): void {
+    if (this.smartGuides) this.smartGuides.config.gridColor = color
+    this.canvas.requestRenderAll()
+  }
+
+  setGridVisible(visible: boolean): void {
+    if (this.smartGuides) this.smartGuides.config.gridVisible = visible
+    this.canvas.requestRenderAll()
+  }
+}

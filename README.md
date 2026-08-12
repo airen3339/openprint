@@ -1,0 +1,420 @@
+<p align="center">
+  <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A+modern+sleek+logo+for+OpenPrint%2C+a+web+based+print+template+designer.+A+stylized+printer+icon+with+a+gradient+blue+to+purple+color+scheme%2C+clean+minimalist+design%2C+glowing+cyan+accent%2C+dark+background+style+with+a+subtle+printing+symbol+and+digital+data+flow+lines+around+it.&image_size=square_hd" width="120" alt="OpenPrint Logo" />
+</p>
+
+<h1 align="center">OpenPrint</h1>
+
+<p align="center">
+  <strong>开源 Web 打印设计器 · AI 驱动 · 跨平台</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/your-repo/open-print/stargazers"><img src="https://img.shields.io/github/stars/your-repo/open-print?style=flat-square&logo=github" alt="Stars" /></a>
+  <a href="https://github.com/your-repo/open-print/releases"><img src="https://img.shields.io/github/v/release/your-repo/open-print?style=flat-square&logo=github" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
+  <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://github.com/fabricjs/fabric.js"><img src="https://img.shields.io/badge/Fabric.js-7.x-blue?style=flat-square" alt="Fabric.js" /></a>
+</p>
+
+<p align="center">
+  <a href="#features">功能特性</a> ·
+  <a href="#quick-start">快速开始</a> ·
+  <a href="#ai-assistant">AI 助手</a> ·
+  <a href="#architecture">架构</a> ·
+  <a href="#deploy">部署</a> ·
+  <a href="#faq">FAQ</a>
+</p>
+
+<br />
+
+**OpenPrint** 是一款开源、零后端依赖的 Web 打印模板可视化设计器。它让用户通过拖拽即可设计快递面单、发票、标签、报表等打印模板，支持 AI 一句话生成、云打印、C++ 桌面客户端静默打印，3 分钟即可对接 ERP 系统。
+
+> 纯前端架构，无需服务器，无需数据库，一个浏览器即可运行。
+
+---
+
+## 目录
+
+- [核心亮点](#核心亮点)
+- [功能特性](#功能特性)
+- [快速开始](#快速开始)
+- [AI 助手](#ai-助手)
+- [技术架构](#技术架构)
+- [项目结构](#项目结构)
+- [部署](#部署)
+- [桌面客户端](#桌面客户端)
+- [ERP 对接](#erp-对接)
+- [FAQ](#faq)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
+
+---
+
+## 核心亮点
+
+### 🤖 AI 一句话生成模板
+
+告别手动拖拽，直接描述需求即可生成专业打印模板。支持快递面单、物流标签、仓储单据、零售小票等多种场景。
+
+```
+用户输入："帮我生成一张快递面单，含收件人、寄件人和运单号条码"
+AI 输出： 自动创建模板 → 布局文本控件 → 添加条码 → 一键使用
+```
+
+### ☁️ 云打印
+
+跨地域多门店远程打印，模板统一管理。浏览器直接打印，免装驱动。云端打印队列，断线自动重试，权限管控，打印日志审计。
+
+### 📊 Web 报表设计
+
+分组表、交叉表、主从表等多级报表结构，支持求和/平均/计数等汇总函数，嵌入柱状图/折线图/饼图，条件格式高亮数据预警，多数据源拼接。
+
+---
+
+## 功能特性
+
+### 设计器
+
+| 功能 | 说明 |
+|------|------|
+| **控件库** | 文本、图片、矩形、圆形、线条、条码、二维码、表格、富文本、图表 10 种控件 |
+| **拖拽设计** | 所见即所得，自由拖拽 + 吸附对齐 + 标尺辅助 |
+| **多页支持** | 多页设计，每页独立页眉页脚，页间距可调 |
+| **数据绑定** | 支持 JSON / CSV / API 数据源，Mustache 表达式绑定 |
+| **主题切换** | 深色/浅色主题，一键切换 |
+| **模板管理** | 本地存储，模板导入/导出，模板市场 |
+| **实时预览** | 预览数据绑定效果，分页预览 |
+| **导出** | PDF / JPG / SVG / HTML 多格式导出 |
+
+### 打印与对接
+
+- **Web 直接打印** — 浏览器调用系统打印对话框
+- **桌面静默打印** — 配套 C++ Qt 客户端，零弹窗打印
+- **云打印** — 远程门店打印，打印队列管理
+- **ERP 对接** — HTTP API 对接，3 分钟接入
+
+### 技术栈
+
+![Vue 3](https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Fabric.js](https://img.shields.io/badge/Fabric.js-7.x-blue?style=flat-square)
+![Pinia](https://img.shields.io/badge/Pinia-FFD859?style=flat-square&logo=pinia&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white)
+![Naive UI](https://img.shields.io/badge/Naive_UI-2E7D32?style=flat-square)
+![UnoCSS](https://img.shields.io/badge/UnoCSS-333333?style=flat-square&logo=unocss&logoColor=white)
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Node.js >= 22.18.0
+- pnpm >= 9.x
+
+### 安装与运行
+
+```bash
+# 克隆仓库
+git clone https://github.com/your-repo/open-print.git
+cd open-print
+
+# 安装依赖
+pnpm install
+
+# 启动开发服务器
+pnpm dev
+
+# 构建生产版本
+pnpm build
+
+# 预览生产构建
+pnpm preview
+```
+
+### 在线演示
+
+访问 [open-print.example.com/demo](https://open-print.example.com/demo) 在线体验设计器。
+
+---
+
+## AI 助手
+
+OpenPrint 内置 AI 助手，支持自然语言生成打印模板。
+
+### 使用方式
+
+1. **新建模板** — 输入需求描述，AI 自动生成完整模板
+2. **修改当前模板** — 选中控件，让 AI 调整布局或样式
+3. **字段接地** — 自动识别数据字段并绑定到模板控件
+
+### 技术原理
+
+- 基于 LLM 解析用户意图，输出结构化模板描述
+- 内部规范引擎将描述转换为 Fabric.js 控件配置
+- 支持上下文感知，可在已有模板上增量修改
+
+### 支持的场景
+
+- 快递面单（顺丰、京东、邮政等格式）
+- 物流标签（运单号、目的地、重量）
+- 仓储单据（入库单、出库单、盘点单）
+- 零售小票（收银小票、退换货单）
+- 发票（增值税发票、收据）
+- 自定义报表
+
+---
+
+## 技术架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       浏览器（Vue 3 SPA）                        │
+│                                                                 │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ 控制面板  │  │ 属性面板  │  │ 图层面板  │  │  数据源面板   │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬────────┘  │
+│       └──────────────┴─────────────┴───────────────┘           │
+│                           │                                    │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    Fabric.js Canvas                       │  │
+│  │  文本 │ 图片 │ 条码 │ 二维码 │ 表格 │ 图表 │ 矩形 │ 圆形 │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                           │                                    │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    排版引擎 (Layout Engine)               │  │
+│  │  数据绑定 │ 表达式计算 │ 分页引擎 │ 表格引擎 │ 分组引擎  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                           │                                    │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    渲染引擎 (Renderer)                    │  │
+│  │  HTML渲染 │ PDF导出 │ JPG导出 │ SVG导出 │ 头部渲染     │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+                    ┌────────┴────────┐
+                    ▼                 ▼
+           ┌──────────────┐  ┌──────────────┐
+           │ C++ Qt 客户端 │  │ 云打印服务    │
+           │ 静默打印      │  │ 远程打印      │
+           │ 本地打印机    │  │ 队列管理      │
+           └──────────────┘  └──────────────┘
+```
+
+### 核心模块
+
+| 模块 | 路径 | 说明 |
+|------|------|------|
+| **设计器** | `src/design/` | Canvas 设计器、控件系统、面板、工具栏 |
+| **排版引擎** | `src/core/layout-engine/` | 数据绑定、分页、表格、分组、表达式 |
+| **渲染引擎** | `src/core/renderer-html/` | HTML 渲染、CSS 生成、富文本渲染 |
+| **导出引擎** | `src/core/export-engine/` | PDF、JPG、SVG 导出 |
+| **AI 助手** | `src/ai/` | AI 生成模板、上下文管理 |
+| **控件库** | `src/design/canvas/controls/` | 10 种 Fabric.js 控件 |
+
+---
+
+## 项目结构
+
+```
+open-print/
+├── src/
+│   ├── ai/                        # AI 助手（生成/规范化/客户端）
+│   ├── core/                      # 核心引擎
+│   │   ├── layout-engine/         # 排版引擎（数据绑定/分页/表格/分组）
+│   │   ├── renderer-html/         # HTML 渲染器
+│   │   ├── export-engine/         # 导出引擎（PDF/JPG/SVG）
+│   │   ├── chartkit/              # 图表渲染（柱状图/折线图/饼图）
+│   │   ├── fonts/                 # 字体加载与管理
+│   │   ├── headless/              # 无头渲染
+│   │   ├── spec/                  # 模板规范与校验
+│   │   └── sdk/                   # SDK 封装
+│   ├── design/                    # 设计器界面
+│   │   ├── canvas/                # Canvas 画布 & 控件
+│   │   ├── panels/                # 属性/图层/数据源面板
+│   │   ├── preview/               # 预览面板
+│   │   ├── toolbar/               # 顶部工具栏
+│   │   ├── modals/                # 模态框（导入/导出/设置）
+│   │   └── stores/                # Pinia 状态管理
+│   ├── repository/                # 数据仓库（本地/HTTP/模拟）
+│   ├── types/                     # TypeScript 类型定义
+│   ├── config/                    # 配置（打印设置/AI 设置）
+│   ├── theme/                     # 主题系统
+│   └── utils/                     # 工具函数
+├── website/                       # 宣传官网
+├── dist/                          # 构建输出
+├── public/                        # 静态资源
+└── docs/                          # 文档
+```
+
+---
+
+## 部署
+
+### 静态部署
+
+构建产物为纯静态文件，可部署到任何 HTTP 服务器：
+
+```bash
+pnpm build
+# 将 dist/ 目录部署到 Nginx / Apache / Vercel / Netlify 等
+```
+
+### Nginx 配置示例
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+    root /path/to/open-print/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+### Docker 部署
+
+```dockerfile
+FROM nginx:alpine
+COPY dist/ /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+```
+
+---
+
+## 桌面客户端
+
+OpenPrint 提供配套的 **C++ Qt 桌面打印客户端**，支持：
+
+- **静默打印** — 接收设计器模板，直接发送到本地打印机，零弹窗
+- **批量打印** — 支持 CSV/JSON 数据批量渲染与打印
+- **本地打印机管理** — 获取打印机列表、状态监控
+- **HTTP 接口** — 通过 REST API 接收打印任务
+- **跨平台** — Windows / Linux / macOS
+
+### 技术栈
+
+![C++](https://img.shields.io/badge/C++-17-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![Qt](https://img.shields.io/badge/Qt-6.x-41CD52?style=flat-square&logo=qt&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat-square&logo=cmake&logoColor=white)
+
+---
+
+## ERP 对接
+
+OpenPrint 提供标准 HTTP API，3 分钟即可完成 ERP 对接：
+
+### 对接流程
+
+1. **设计模板** — 在 Web 设计器中拖拽生成打印模板
+2. **导出模板文件** — 导出 `.json` 模板文件
+3. **API 对接** — ERP 系统通过 HTTP 推送数据 + 模板 ID，触发打印
+
+### API 示例
+
+```http
+POST /api/print
+Content-Type: application/json
+
+{
+  "template_id": "waybill-001",
+  "data": {
+    "sender_name": "张三",
+    "sender_phone": "13800138000",
+    "receiver_name": "李四",
+    "receiver_address": "北京市朝阳区..."
+  },
+  "printer": "local-printer-01",
+  "copies": 1
+}
+```
+
+---
+
+## FAQ
+
+### OpenPrint 需要后端服务吗？
+
+不需要。OpenPrint 是纯前端应用，零后端依赖。模板存储在浏览器本地（IndexedDB），AI 功能通过直接调用 LLM API 实现。如需对接打印机或 ERP，可部署可选的桌面客户端。
+
+### 支持哪些浏览器？
+
+Chrome / Edge / Firefox / Safari 等现代浏览器。推荐使用 Chromium 内核浏览器以获得最佳体验。
+
+### 如何自定义字体？
+
+将字体文件（`.ttf` / `.woff2`）放入 `public/fonts/` 目录，并在 `src/core/fonts/catalog.ts` 中注册即可。
+
+### 支持批量打印吗？
+
+支持。通过 CSV/JSON 数据源 + 模板引擎，可批量生成多页文档并导出或打印。桌面客户端支持批量静默打印。
+
+### 如何导出模板与他人分享？
+
+使用模板导出功能导出 `.json` 文件，其他人可通过导入功能加载使用。也支持 URL 编码分享（零后端）。
+
+---
+
+## 贡献指南
+
+欢迎贡献代码、提交 Issue 或建议！
+
+### 开发流程
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 提交 Pull Request
+
+### 提交规范
+
+本项目使用 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
+
+- `feat:` 新功能
+- `fix:` 修复
+- `docs:` 文档变更
+- `refactor:` 重构
+- `test:` 测试
+- `chore:` 构建/工具变更
+
+### 开发命令
+
+```bash
+# 运行测试
+pnpm vitest
+
+# 类型检查
+pnpm type-check
+
+# 格式化代码
+pnpm format
+
+# 代码覆盖率
+pnpm vitest --coverage
+```
+
+---
+
+## 许可证
+
+[MIT License](LICENSE)
+
+Copyright (c) 2025 OpenPrint
+
+---
+
+<p align="center">
+  <b>OpenPrint</b> — 让打印变得简单高效
+</p>
+<p align="center">
+  <a href="https://github.com/your-repo/open-print">GitHub</a> ·
+  <a href="https://gitee.com/your-repo/open-print">Gitee</a> ·
+  <a href="https://open-print.example.com/demo">在线演示</a>
+</p>

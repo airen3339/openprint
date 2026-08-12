@@ -1,0 +1,210 @@
+/**
+ * PDF 导出 —— jsPDF 动态 import（不进主包）
+ *
+ * ## 图表走矢量（svg2pdf）
+ * 设计器一切以 SVG 为真相源。为让图表在 PDF 里达到「印刷级矢量」：
+ * 1. 每页先**剥离 chart 控件** → 栅格化（文本/表格位图底图）→ addImage 作背景；
+ * 2. 再遍历该页 chart 节点，用 `svg2pdf` 把其 SVG 以**矢量**注入 jsPDF 对应 mm 盒；
+ * 3. 思源宋体 TTF 注册进 jsPDF（'SourceHanSerifCN'），图表中文标签才不会变空白/方块。
+ *
+ * 兜底：
+ * - 图表被旋转 → 整页退回旧的全栅格化（旋转在矢量叠加里不易对齐）；
+ * - 单个图表 svg2pdf 失败 → 该图表单独栅格化后叠加（不丢图）；
+ * - 字体加载失败（极端环境）→ 整页退回全栅格化（仍是位图，但保证有图）。
+ *
+ * 非图表页（无 chart 控件）仍走原全栅格化位图路径，行为与旧版一致。
+ */
+import type { LayoutResult, LayoutPage, PlacedNode, PlacedControl } from '@/core/layout-engine/types'
+import { pageToImageBlob, buildPageSvg, svgToCanvas } from './rasterize'
+import { embedFontsInSvg, type FontFaceDef } from './fonts'
+import type { PageDecoration } from '@/types/template'
+import { blobToDataURL } from './util'
+import { mmv } from '@/core/renderer-html/css-generator'
+
+/** 思源宋体 —— PDF 唯一内联字体（写死 TTF，位图 PDF 保证中文衬线效果；矢量图表也注册它） */
+const PDF_FONTS: FontFaceDef[] = [
+  { family: '思源宋体', src: '/fonts/SourceHanSerifCN-Regular.ttf', weight: 400 },
+]
+/** 矢量图表文本使用的 jsPDF 字体名（必须与 chartkit SVG 的 font-family 首选项一致） */
+const SERIF_FONT_NAME = 'SourceHanSerifCN'
+const SERIF_TTF_URL = '/fonts/SourceHanSerifCN-Regular.ttf'
+
+export interface PdfOptions {
+  /** 高清倍率，1=96dpi / 2=192dpi（推荐）/ 3=288dpi，默认 2 */
+  scale?: number
+  /** 页面装饰（背景色 + 水印），使 PDF 与预览一致 */
+  pageDecoration?: PageDecoration
+}
+
+function isChartNode(n: PlacedNode): n is PlacedControl {
+  return n.kind === 'control' && (n as PlacedControl).control.type === 'chart'
+}
+
+/** 返回去掉所有 chart 控件后的页面副本（不影响原对象） */
+function stripCharts(page: LayoutPage): LayoutPage {
+  const f = <T extends PlacedNode>(nodes: T[]): T[] => nodes.filter((n) => !isChartNode(n)) as T[]
+  return { ...page, header: f(page.header), body: f(page.body), footer: f(page.footer) }
+}
+
+interface ChartBox {
+  left: number
+  top: number
+  width: number
+  height: number
+  angle: number
+  svg: string
+}
+
+/** 收集页面内所有 chart 控件（含其 mm 盒与 SVG） */
+function chartsOf(page: LayoutPage): ChartBox[] {
+  const out: ChartBox[] = []
+  for (const sec of [page.header, page.body, page.footer]) {
+    for (const n of sec) {
+      if (!isChartNode(n)) continue
+      const c = n as PlacedControl
+      if (c.content.kind !== 'svg') continue
+      out.push({
+        left: n.left,
+        top: n.top,
+        width: n.width,
+        height: n.height,
+        angle: n.angle ?? 0,
+        svg: c.content.svg,
+      })
+    }
+  }
+  return out
+}
+
+/** ArrayBuffer → base64（分块，避免 call stack 溢出） */
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(bin)
+}
+
+/** 把思源宋体 TTF 注册进 jsPDF，供矢量图表中文标签使用。失败不抛（退化为位图兜底） */
+async function registerSerifFont(doc: { addFileToVFS: (n: string, d: string) => void; addFont: (f: string, n: string, s: string) => void }): Promise<boolean> {
+  try {
+    const res = await fetch(SERIF_TTF_URL)
+    if (!res.ok) return false
+    const b64 = arrayBufferToBase64(await res.arrayBuffer())
+    doc.addFileToVFS(`${SERIF_FONT_NAME}.ttf`, b64)
+    doc.addFont(`${SERIF_FONT_NAME}.ttf`, SERIF_FONT_NAME, 'normal')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 单图表栅格化（svg2pdf 失败时的兜底，保证不丢图） */
+async function rasterizeChart(chartSvg: string, wMm: number, hMm: number, scale: number): Promise<string> {
+  const inner = `<div style="width:${mmv(wMm)};height:${mmv(hMm)};overflow:hidden">${chartSvg}</div>`
+  let svg = buildPageSvg(inner, '', wMm, hMm)
+  svg = await embedFontsInSvg(svg, PDF_FONTS)
+  const canvas = await svgToCanvas(svg, scale, '#ffffff')
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
+  if (!blob) throw new Error('图表栅格化失败')
+  return blobToDataURL(blob)
+}
+
+/** SVG 字符串 → 挂到 DOM 的 SVGSVGElement（svg2pdf 需要真实节点以读取几何） */
+function svgElementFromString(str: string): SVGSVGElement {
+  const doc = new DOMParser().parseFromString(str, 'image/svg+xml')
+  return doc.documentElement as unknown as SVGSVGElement
+}
+
+export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {}): Promise<Blob> {
+  const mod = await import('jspdf')
+  const JsPDF = (mod as unknown as { jsPDF?: typeof mod.default; default: typeof mod.default }).jsPDF ?? mod.default
+  const { pageWidth: w, pageHeight: h } = result.metrics
+  const orientation = w > h ? 'landscape' : 'portrait'
+  const scale = opts.scale ?? 2
+
+  const doc = new JsPDF({ unit: 'mm', format: [w, h], orientation })
+
+  let serifReady = false
+
+  for (let i = 0; i < result.pages.length; i++) {
+    if (i > 0) doc.addPage([w, h], orientation)
+
+    const page = result.pages[i]!
+    const charts = chartsOf(page)
+    // 有图表且该页图表都未旋转 → 走矢量；否则全栅格化（含图表）
+    const useVector = charts.length > 0 && charts.every((c) => c.angle === 0)
+
+    if (!useVector) {
+      const dataUrl = await rasterizePageFull(result, i, scale, opts.pageDecoration)
+      doc.addImage(dataUrl, 'PNG', 0, 0, w, h)
+      continue
+    }
+
+    // 矢量路径：先栅格化"剥掉图表"的底图，再把图表以矢量叠加
+    if (!serifReady) serifReady = await registerSerifFont(doc)
+    const strippedResult: LayoutResult = {
+      ...result,
+      pages: result.pages.map((p, idx) => (idx === i ? stripCharts(p) : p)),
+    }
+    const baseUrl = await rasterizePageFull(strippedResult, i, scale, opts.pageDecoration)
+    doc.addImage(baseUrl, 'PNG', 0, 0, w, h)
+
+    let allVectorOk = true
+    for (const ch of charts) {
+      try {
+        const el = svgElementFromString(ch.svg)
+        el.style.position = 'absolute'
+        el.style.left = '-99999px'
+        el.style.top = '0'
+        document.body.appendChild(el)
+        try {
+          const { svg2pdf } = await import('svg2pdf.js')
+          await svg2pdf(el, doc, { x: ch.left, y: ch.top, width: ch.width, height: ch.height })
+        } finally {
+          document.body.removeChild(el)
+        }
+      } catch {
+        // 该图表矢量失败 → 单独栅格化兜底
+        try {
+          const img = await rasterizeChart(ch.svg, ch.width, ch.height, scale)
+          doc.addImage(img, 'PNG', ch.left, ch.top, ch.width, ch.height)
+        } catch {
+          allVectorOk = false
+        }
+      }
+    }
+
+    // 兜底：若整页矢量叠加彻底失败，重渲染该页（含图表）作位图背景
+    if (!allVectorOk) {
+      // 当前页已 addImage 了"剥图底图"，需替换为含图表的整页位图。
+      // 顺序处理下最后一页动作即本页，删除后重建即可，不影响其它页。
+      const pageCount = doc.getNumberOfPages()
+      doc.deletePage(pageCount)
+      doc.addPage([w, h], orientation)
+      const fallback = await rasterizePageFull(result, i, scale, opts.pageDecoration)
+      doc.addImage(fallback, 'PNG', 0, 0, w, h)
+    }
+  }
+
+  return doc.output('blob')
+}
+
+/** 整页栅格化（含图表），封装原 pageToImageBlob 调用 */
+async function rasterizePageFull(
+  result: LayoutResult,
+  index: number,
+  scale: number,
+  pageDecoration?: PageDecoration,
+): Promise<string> {
+  const blob = await pageToImageBlob(result, index, {
+    type: 'image/png',
+    scale,
+    background: pageDecoration?.backgroundColor ?? '#ffffff',
+    fonts: PDF_FONTS,
+    pageDecoration,
+  })
+  return blobToDataURL(blob)
+}

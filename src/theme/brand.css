@@ -1,0 +1,81 @@
+/**
+ * brand.css —— 语义化品牌 CSS 变量
+ *
+ * 与 naive-theme.ts / uno.config.ts 同源：
+ *   :root        → 亮色
+ *   html.dark    → 暗色（由 ui store 切换时在 document.documentElement 打 .dark 类）
+ *
+ * 注意：
+ * - body 的背景/前景色交给 NGlobalStyle（它会同步 common.bodyColor / textColor），
+ *   这里只做「组件内自定义样式」使用的语义化变量。
+ * - 旧 --brand-dark 保留作为「深色顶栏背景」语义的别名，
+ *   但推荐直接用 --brand-nav-bg（含义更明确）。
+ */
+
+:root {
+  /* 主色 */
+  --brand-primary: var(--op-primary, #1677FF);
+  --brand-primary-hover: var(--op-primary-hover, #4096FF);
+  --brand-primary-pressed: var(--op-primary-pressed, #0958D9);
+
+  /* 表面 */
+  --brand-bg: var(--op-bg, #F5F7FA);
+  --brand-surface: var(--op-surface, #FFFFFF);
+  --brand-border: var(--op-border, #E5E7EB);
+
+  /* 文字 */
+  --brand-text-1: var(--op-text-1, #1F2329);
+  --brand-text-2: var(--op-text-2, #4B5563);
+  --brand-text-3: var(--op-text-3, #86909C);
+  --brand-text-muted: var(--op-text-muted, #86909C);
+
+  /* 顶栏跟随主题：亮色下用白色表面 + 深色文字 */
+  --brand-nav-bg: var(--op-nav-bg, #FFFFFF);
+  --brand-nav-bg-hover: var(--op-nav-bg-hover, rgba(0,0,0,0.04));
+  --brand-nav-text: var(--op-nav-text, #1F2329);
+  --brand-nav-text-muted: var(--op-nav-text-muted, #86909C);
+  --brand-nav-text-active: var(--op-nav-text-active, #1F2329);
+  --brand-nav-icon: var(--op-nav-icon, #4B5563);
+  --brand-nav-icon-hover: var(--op-nav-icon-hover, #1F2329);
+
+  /* 兼容性别名（旧代码里用 --brand-dark 表示深色顶栏） */
+  --brand-dark: var(--brand-nav-bg);
+
+  /* 画布外围 */
+  --op-canvas-bg: var(--op-bg, #F5F7FA);
+  --op-canvas-checker-a: #FFFFFF;
+  --op-canvas-checker-b: #F3F4F6;
+}
+
+html.dark {
+  /* 主色 · 暗下调亮保证对比 */
+  --brand-primary: var(--op-primary, #3C8DFF);
+  --brand-primary-hover: var(--op-primary-hover, #5FA1FF);
+  --brand-primary-pressed: var(--op-primary-pressed, #1B65D4);
+
+  /* 表面 */
+  --brand-bg: var(--op-bg, #0B0D12);
+  --brand-surface: var(--op-surface, #171A21);
+  --brand-border: var(--op-border, #2A2F3A);
+
+  /* 文字 · 主文字用纯白保证对比 */
+  --brand-text-1: var(--op-text-1, #FFFFFF);
+  --brand-text-2: var(--op-text-2, #AFB4BD);
+  --brand-text-3: var(--op-text-3, #7A808C);
+  --brand-text-muted: var(--op-text-muted, #7A808C);
+
+  /* 顶栏 · 暗色下用深色背景 + 白色文字/图标 */
+  --brand-nav-bg: var(--op-nav-bg, #0F1116);
+  --brand-nav-bg-hover: var(--op-nav-bg-hover, rgba(255,255,255,0.08));
+  --brand-nav-text: var(--op-nav-text, #FFFFFF);
+  --brand-nav-text-muted: var(--op-nav-text-muted, #9CA3AF);
+  --brand-nav-text-active: var(--op-nav-text-active, #FFFFFF);
+  --brand-nav-icon: var(--op-nav-icon, #FFFFFF);
+  --brand-nav-icon-hover: var(--op-nav-icon-hover, #FFFFFF);
+
+  --brand-dark: var(--brand-nav-bg);
+
+  --op-canvas-bg: var(--op-bg, #0B0D12);
+  --op-canvas-checker-a: #171A21;
+  --op-canvas-checker-b: #1F242D;
+}
