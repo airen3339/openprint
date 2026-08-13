@@ -13,9 +13,6 @@ const ui = useUiStore()
 
 <template>
   <div class="flex h-full flex-col bg-brand-surface">
-    <div class="flex items-center justify-between border-b border-brand-border px-3 py-2">
-      <span class="text-13px font-medium">组件库</span>
-    </div>
     <NTabs v-model:value="ui.leftTab" type="segment" size="small" class="flex-1 px-2" animated>
       <NTabPane name="components" tab="组件">
         <ControlLibrary />

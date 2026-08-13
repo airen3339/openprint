@@ -7,7 +7,10 @@
  *   GET  /printers 打印机列表（能力/状态/纸盒）
  *   POST /print    推送任务
  *
- * 推送格式（主任定）：**单页 → SVG 原文；多页 → PDF 转 base64**。
+ * 推送格式（2026-08-13 最终定案）：**统一推 PDF（base64）**。
+ * PDF 内部位图底图默认 PNG（无损·最高清），文字/线条边缘真正锐利，打印推荐。
+ * 本地客户端用 `QPrinter` 打印位图 PDF。
+ * 演进：SVG（Qt 不支持 foreignObject，废弃）→ 统一 PDF（最终）。
  * 载荷由 `buildPrintPayload()` 统一构建，与预览/导出共用同一条 render 链路，保证三者一致。
  *
  * 主任铁律：无后端全链路可用 —— 客户端不可达时只是不能出纸，设计器功能不受影响。
@@ -34,6 +37,7 @@ import {
   buildPrintPayload,
   describePrintError,
   formatPayloadSize,
+  generateJobId,
   submitPrintJob,
   type PrinterInfo,
 } from '@/core/print-client'
@@ -300,6 +304,7 @@ async function doPrint(): Promise<void> {
     printingHint.value = `正在推送 ${payload.format.toUpperCase()}（${payload.pages} 页 · ${formatPayloadSize(payload.bytes)}）…`
     const res = await submitPrintJob(
       {
+        jobId: generateJobId(),
         taskName: taskName.value,
         printer: selectedPrinter.value,
         format: payload.format,
@@ -498,7 +503,7 @@ function close(): void {
     <!-- 推送格式说明 -->
     <div class="print-format-note">
       <div class="i-carbon-information text-13px" />
-      <span>推送规则：单页文档以 <b>SVG</b> 矢量原文推送，多页文档转 <b>PDF（base64）</b> 推送。</span>
+      <span>推送规则：所有文档统一转 <b>PDF（base64）</b> 推送，本地客户端用 QPrinter 直接打印。</span>
     </div>
 
     <template #footer>

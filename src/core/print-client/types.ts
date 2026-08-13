@@ -69,14 +69,21 @@ export interface PrinterListResponse {
 
 /* ------------------------------ /print ------------------------------ */
 
-/** 推送载荷格式：单页 SVG（矢量文本），多页 PDF（base64） */
+/**
+ * 推送载荷格式。
+ * **2026-08-13 最终定案**：统一推 `'pdf'`（base64）。
+ * - 单页/多页都走浏览器栅格化的位图 PDF，本地客户端 `QPrinter` 打印无兼容性问题。
+ * - `'svg'` 保留在枚举里仅供向后兼容（已废弃：Qt QSvgRenderer 不解析 foreignObject/HTML）。
+ */
 export type PrintPayloadFormat = 'svg' | 'pdf'
 
-/** 载荷编码：svg 用 utf8 原文，pdf 用 base64 */
+/** 载荷编码：jpg/pdf 用 base64；utf8 仅供向后兼容（对应已废弃的 SVG 原文路径） */
 export type PrintPayloadEncoding = 'utf8' | 'base64'
 
 /** POST /print 请求体 */
 export interface PrintJobRequest {
+  /** 任务号：由 Web 端生成（MMDD + 6 位随机，共 10 位）；服务端若回传则以其为准，否则沿用此值 */
+  jobId?: string
   /** 任务名（用于打印队列显示） */
   taskName: string
   /** 目标打印机名（取自 /printers 的 name；留空由客户端用系统默认） */
@@ -85,7 +92,7 @@ export interface PrintJobRequest {
   format: PrintPayloadFormat
   /** 载荷编码 */
   encoding: PrintPayloadEncoding
-  /** 文档内容：svg=XML 原文；pdf=base64（不含 data: 前缀） */
+  /** 文档内容：pdf=PDF base64（不含 data: 前缀）；svg=XML 原文（已废弃） */
   content: string
   /** 文档总页数 */
   pages: number

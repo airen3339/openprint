@@ -108,10 +108,27 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * "Tainted canvases may not be exported"。同一 SVG 改用 `data:` URL 加载则不污染。
  * （实测对照：blob+FO=TAINTED，blob+纯矢量=clean，data+FO=clean，data+纯矢量=clean）
  */
+/** 把 SVG 根节点的显示宽高放大 scale 倍（viewBox 不变），让 foreignObject 以高分原生渲染，
+ * 而不是低分渲染后再插值放大 —— 这是打印/导出文字清晰的关键。
+ * 血泪：低分 SVG 渲染成位图后再 drawImage 放大 = 只是像素插值，文字发虚；
+ * 放大 SVG 的 width/height（viewBox 不动）则内容矢量重排到高分画布，边缘锐利。 */
+function scaleSvgViewport(svg: string, scale: number): string {
+  if (!Number.isFinite(scale) || scale === 1) return svg
+  return svg.replace(
+    /<svg([^>]*?)\bwidth="([\d.]+)"([^>]*?)\bheight="([\d.]+)"/,
+    (m, p1: string, w: string, p2: string, h: string) =>
+      `<svg${p1}width="${Math.round(parseFloat(w) * scale)}"${p2}height="${Math.round(parseFloat(h) * scale)}"`,
+  )
+}
+
 export async function svgToCanvas(svg: string, scale: number, bg: string): Promise<HTMLCanvasElement> {
-  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
-  const cw = Math.max(1, Math.round(794 * scale))
-  const ch = Math.max(1, Math.round(1123 * scale))
+  // 先放大 SVG 显示尺寸，再加载：img 本身就是高分位图，canvas 无需再插值放大
+  const scaled = scaleSvgViewport(svg, scale)
+  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(scaled)
+  // fallback 尺寸从放大后的 SVG 宽高推导（取不到再用 A4×scale 兜底）
+  const dim = scaled.match(/<svg[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/)
+  const cw = Math.max(1, Math.round(dim ? parseFloat(dim[1]!) : 794 * scale))
+  const ch = Math.max(1, Math.round(dim ? parseFloat(dim[2]!) : 1123 * scale))
   const fallback = (): HTMLCanvasElement => {
     const canvas = document.createElement('canvas')
     canvas.width = cw
@@ -126,13 +143,14 @@ export async function svgToCanvas(svg: string, scale: number, bg: string): Promi
   try {
     const img = await loadImage(url)
     const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(img.width * scale))
-    canvas.height = Math.max(1, Math.round(img.height * scale))
+    // img.width/height 已是高分目标尺寸，drawImage 原样铺绘，不再缩放插值
+    canvas.width = Math.max(1, img.width)
+    canvas.height = Math.max(1, img.height)
     const ctx = canvas.getContext('2d')
     if (!ctx) return fallback()
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0)
     return canvas
   } catch {
     // 环境不支持 foreignObject 光栅化（如 happy-dom）→ 降级白底空 canvas，不阻塞导出
@@ -144,6 +162,12 @@ export interface PageImageOptions {
   scale?: number
   background?: string
   type?: 'image/png' | 'image/jpeg'
+  /**
+   * JPEG 编码质量 0-1，默认 **1（最高清）**。
+   * 注：quality=1 比 0.92 体积大约 30-60%，但仍是 PNG 的零头；
+   * 对票据/报表这类对清晰度敏感的打印件值得。
+   */
+  quality?: number
   /** 自定义字体（同源 URL），嵌入 SVG 使栅格化产物不丢字体 */
   fonts?: FontFaceDef[]
   /** 页面装饰（背景色 + 水印），使导出与预览一致 */
@@ -243,13 +267,14 @@ export async function pageToImageBlob(
   const pageHtml = await inlinePageImages(renderPage(page, deco?.watermark))
   let svg = buildPageSvg(pageHtml, css, result.metrics.pageWidth, result.metrics.pageHeight)
   if (opts.fonts?.length) svg = await embedFontsInSvg(svg, opts.fonts)
-  const canvas = await svgToCanvas(svg, opts.scale ?? 2, opts.background ?? '#ffffff')
+  const canvas = await svgToCanvas(svg, opts.scale ?? 3, opts.background ?? '#ffffff')
   const type = opts.type ?? 'image/png'
+  const quality = type === 'image/jpeg' ? opts.quality ?? 1 : undefined
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob 失败'))),
       type,
-      type === 'image/jpeg' ? 0.92 : undefined,
+      quality,
     )
   })
 }

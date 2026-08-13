@@ -15,6 +15,7 @@
   <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="https://github.com/fabricjs/fabric.js"><img src="https://img.shields.io/badge/Fabric.js-7.x-blue?style=flat-square" alt="Fabric.js" /></a>
+  <a href="https://www.npmjs.com/package/openprint26"><img src="https://img.shields.io/npm/v/openprint26?style=flat-square&logo=npm&logoColor=white" alt="npm" /></a>
 </p>
 
 <p align="center">
@@ -120,12 +121,38 @@ AI 输出： 自动创建模板 → 布局文本控件 → 添加条码 → 一�
 
 ## 快速开始
 
-### 环境要求
+### npm 安装（推荐）
 
-- Node.js >= 22.18.0
-- pnpm >= 9.x
+```bash
+# npm
+npm i openprint26
 
-### 安装与运行
+# pnpm
+pnpm add openprint26
+
+# yarn
+yarn add openprint26
+```
+
+#### 在项目中使用
+
+```ts
+import { createApp } from 'vue'
+import OpenPrint from 'openprint26'
+import 'openprint26/dist/style.css'
+
+const app = createApp(App)
+app.use(OpenPrint)
+app.mount('#app')
+```
+
+```vue
+<template>
+  <OpenPrintDesigner />
+</template>
+```
+
+### 从源码运行
 
 ```bash
 # 克隆仓库
@@ -144,6 +171,11 @@ pnpm build
 # 预览生产构建
 pnpm preview
 ```
+
+### 环境要求
+
+- Node.js >= 22.18.0
+- pnpm >= 9.x
 
 ### 在线演示
 
@@ -355,6 +387,14 @@ Content-Type: application/json
 ---
 
 ## FAQ
+
+### 如何安装 OpenPrint？
+
+```bash
+npm i openprint26
+```
+
+详细用法见 [快速开始](#快速开始) 章节。
 
 ### OpenPrint 需要后端服务吗？
 

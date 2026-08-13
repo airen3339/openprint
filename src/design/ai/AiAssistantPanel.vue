@@ -472,6 +472,7 @@ watch(
 .ai-header-title {
   font-size: 15px;
   font-weight: 600;
+  margin-bottom: 5px;
   color: var(--brand-text-1, #1f2329);
 }
 .ai-header-sub {

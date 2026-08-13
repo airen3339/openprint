@@ -151,7 +151,7 @@ ${s}.op-table tr.is-striped td { background: ${TABLE_STRIPE_BG}; }
    单元格视觉以内联样式为准（与设计期 overlay 同一套 resolveCellStyleFor 取值） */
 ${s}.op-table tr.is-static td { /* 占位：保持类名与设计期对齐，避免样式遗漏 */ }
 
-/* ---------- 表格样式预设（Excel 式快速切换；class 由渲染端挂在 <table> 上） ---------- */
+/* ---------- 表格样式预设（Excel 式快速切换；class 由渲染端挂在 table 元素上） ---------- */
 /* 默认（none）：仅表头加粗，无任何背景色（含标题行）。无需规则，class 仅作占位。 */
 
 /* 表头高亮：表头浅灰底 */

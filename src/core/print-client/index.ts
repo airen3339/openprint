@@ -18,6 +18,7 @@ export {
   checkHealth,
   listPrinters,
   submitPrintJob,
+  generateJobId,
   blobToBase64,
   blobToText,
 } from './client'

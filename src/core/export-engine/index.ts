@@ -25,7 +25,7 @@ export type { FontFaceDef } from './fonts'
 export type ExportFormat = 'pdf' | 'jpg' | 'svg'
 
 export interface ExportOptions {
-  /** 高清倍率 1/2/3，默认 2 */
+  /** 高清倍率 1/2/3（默认 3·288dpi·最高清），可传 4 更锐 */
   scale?: number
   /** 文件名（不含扩展名）；多页 JPG 会追加 -页码 */
   filename?: string
@@ -33,6 +33,12 @@ export interface ExportOptions {
   background?: string
   /** 自定义字体（同源 URL），嵌入 JPG/SVG 栅格化产物使导出不丢字体 */
   fonts?: FontFaceDef[]
+  /**
+   * PDF 位图底图压缩格式（仅 PDF 导出生效，默认 `'png'` 无损最清晰）：
+   * - `'png'`：无损，文字/线条边缘锐利，打印推荐；
+   * - `'jpeg'`：体积小，仅体积敏感场景。
+   */
+  pdfImageType?: 'jpeg' | 'png'
 }
 
 export interface ExportOutcome {
@@ -53,13 +59,17 @@ export async function exportDocument(
   const res = await render(request)
   const result: LayoutResult = res.result
   const name = (options.filename ?? 'openprint-document').trim() || 'openprint-document'
-  const scale = options.scale ?? 2
+  const scale = options.scale ?? 3
   const bg = options.background ?? '#ffffff'
   // 页面装饰（背景色 + 水印）统一来自渲染请求 output，三格式导出共享
   const deco = request.output?.pageDecoration
 
   if (format === 'pdf') {
-    const blob = await documentToPdf(result, { scale, pageDecoration: deco })
+    const blob = await documentToPdf(result, {
+      scale,
+      imageType: options.pdfImageType ?? 'png',
+      pageDecoration: deco,
+    })
     return { blobs: [blob], filenames: [`${name}.pdf`], mime: 'application/pdf' }
   }
 

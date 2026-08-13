@@ -1,6 +1,12 @@
 /**
  * PDF 导出 —— jsPDF 动态 import（不进主包）
  *
+ * ## 位图底图默认 PNG（无损 · 最清晰）
+ * 早期为压体积改过 JPEG，但纯文字/线条在白底上即使 quality=1 也会被 8×8 DCT
+ * 引入极轻环状伪影，300dpi 打印放大后边缘发虚、不如 PNG 锐利。
+ * 现回归 PNG（无损）：以体积换清晰度，导出/打印文字边缘真正锐利。
+ * 体积敏感场景可传 `imageType: 'jpeg'`，但默认走 PNG 保清晰。
+ *
  * ## 图表走矢量（svg2pdf）
  * 设计器一切以 SVG 为真相源。为让图表在 PDF 里达到「印刷级矢量」：
  * 1. 每页先**剥离 chart 控件** → 栅格化（文本/表格位图底图）→ addImage 作背景；
@@ -11,7 +17,7 @@
  *
  * 兜底：
  * - 图表被旋转 → 整页退回旧的全栅格化（旋转在矢量叠加里不易对齐）；
- * - 单个图表矢量失败/字形展开失败 → 该图表单独栅格化后叠加（不丢图）；
+ * - 单个图表矢量失败/字形展开失败 → 该图表单独栅格化后叠加（图表保持 PNG 以保边缘锐利）；
  * - 整页矢量叠加彻底失败 → 整页退回全栅格化（仍是位图，但保证有图）。
  *
  * 非图表页（无 chart 控件）仍走原全栅格化位图路径，行为与旧版一致。
@@ -30,10 +36,24 @@ const PDF_FONTS: FontFaceDef[] = [
 ]
 
 export interface PdfOptions {
-  /** 高清倍率，1=96dpi / 2=192dpi（推荐）/ 3=288dpi，默认 2 */
+  /** 高清倍率，1=96dpi / 2=192dpi / 3=288dpi（默认·最高清），可传 4 更锐 */
   scale?: number
   /** 页面装饰（背景色 + 水印），使 PDF 与预览一致 */
   pageDecoration?: PageDecoration
+  /**
+   * 位图底图的压缩格式（默认 `'png'`，无损最清晰）：
+   * - `'png'`：无损，文字/线条边缘真正锐利，打印推荐；体积较大（纯文字页 ~10+ MB）。
+   * - `'jpeg'`：体积小（~1-2 MB），仅体积敏感场景使用，清晰度略逊于 PNG。
+   * 图表矢量叠加路径不受影响（图表本身走 svg2pdf 矢量注入）。
+   */
+  imageType?: 'jpeg' | 'png'
+}
+
+/** 把 PdfOptions 的 imageType 解析成 canvas.toBlob 的 MIME 与 addImage 的格式名 */
+function imgSpec(imageType: 'jpeg' | 'png'): { mime: 'image/jpeg' | 'image/png'; addImageFmt: 'JPEG' | 'PNG' } {
+  return imageType === 'png'
+    ? { mime: 'image/png', addImageFmt: 'PNG' }
+    : { mime: 'image/jpeg', addImageFmt: 'JPEG' }
 }
 
 function isChartNode(n: PlacedNode): n is PlacedControl {
@@ -98,7 +118,9 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
   const JsPDF = (mod as unknown as { jsPDF?: typeof mod.default; default: typeof mod.default }).jsPDF ?? mod.default
   const { pageWidth: w, pageHeight: h } = result.metrics
   const orientation = w > h ? 'landscape' : 'portrait'
-  const scale = opts.scale ?? 2
+  const scale = opts.scale ?? 3
+  const imageType: 'jpeg' | 'png' = opts.imageType ?? 'png'
+  const { addImageFmt } = imgSpec(imageType)
 
   const doc = new JsPDF({ unit: 'mm', format: [w, h], orientation })
 
@@ -111,8 +133,8 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
     const useVector = charts.length > 0 && charts.every((c) => c.angle === 0)
 
     if (!useVector) {
-      const dataUrl = await rasterizePageFull(result, i, scale, opts.pageDecoration)
-      doc.addImage(dataUrl, 'PNG', 0, 0, w, h)
+      const dataUrl = await rasterizePageFull(result, i, scale, opts.pageDecoration, imageType)
+      doc.addImage(dataUrl, addImageFmt, 0, 0, w, h)
       continue
     }
 
@@ -121,8 +143,8 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
       ...result,
       pages: result.pages.map((p, idx) => (idx === i ? stripCharts(p) : p)),
     }
-    const baseUrl = await rasterizePageFull(strippedResult, i, scale, opts.pageDecoration)
-    doc.addImage(baseUrl, 'PNG', 0, 0, w, h)
+    const baseUrl = await rasterizePageFull(strippedResult, i, scale, opts.pageDecoration, imageType)
+    doc.addImage(baseUrl, addImageFmt, 0, 0, w, h)
 
     let allVectorOk = true
     for (const ch of charts) {
@@ -141,7 +163,7 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
           document.body.removeChild(el)
         }
       } catch {
-        // 该图表矢量失败 → 单独栅格化兜底
+        // 该图表矢量失败 → 单独栅格化兜底（图表保持 PNG 以保边缘锐利，体积可控）
         try {
           const img = await rasterizeChart(ch.svg, ch.width, ch.height, scale)
           doc.addImage(img, 'PNG', ch.left, ch.top, ch.width, ch.height)
@@ -158,8 +180,8 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
       const pageCount = doc.getNumberOfPages()
       doc.deletePage(pageCount)
       doc.addPage([w, h], orientation)
-      const fallback = await rasterizePageFull(result, i, scale, opts.pageDecoration)
-      doc.addImage(fallback, 'PNG', 0, 0, w, h)
+      const fallback = await rasterizePageFull(result, i, scale, opts.pageDecoration, imageType)
+      doc.addImage(fallback, addImageFmt, 0, 0, w, h)
     }
   }
 
@@ -171,10 +193,12 @@ async function rasterizePageFull(
   result: LayoutResult,
   index: number,
   scale: number,
-  pageDecoration?: PageDecoration,
+  pageDecoration: PageDecoration | undefined,
+  imageType: 'jpeg' | 'png',
 ): Promise<string> {
+  const { mime } = imgSpec(imageType)
   const blob = await pageToImageBlob(result, index, {
-    type: 'image/png',
+    type: mime,
     scale,
     background: pageDecoration?.backgroundColor ?? '#ffffff',
     fonts: PDF_FONTS,

@@ -18,7 +18,6 @@ import {
   NModal,
   NRadio,
   NRadioGroup,
-  NSelect,
   useMessage,
 } from 'naive-ui'
 import { exportDocument, downloadBlob, type ExportFormat } from '@/core/export-engine'
@@ -34,7 +33,6 @@ const dsStore = useDataSourceStore()
 const message = useMessage()
 
 const format = ref<ExportFormat>('pdf')
-const scale = ref(2)
 const rowCount = ref(30)
 const filename = ref('销售出库单')
 const exporting = ref(false)
@@ -43,11 +41,6 @@ const formatOptions = [
   { label: 'PDF（单文件 · 多页）', value: 'pdf' },
   { label: 'JPG（每页一张）', value: 'jpg' },
   { label: 'SVG（矢量 · 单文件多页）', value: 'svg' },
-]
-const scaleOptions = [
-  { label: '1x（96dpi）', value: 1 },
-  { label: '2x（192dpi · 推荐）', value: 2 },
-  { label: '3x（288dpi · 最高清）', value: 3 },
 ]
 
 function close(): void {
@@ -72,7 +65,7 @@ async function onExport(): Promise<void> {
         },
       },
       format.value,
-      { scale: scale.value, filename: filename.value.trim() || 'openprint-document' },
+      { filename: filename.value.trim() || 'openprint-document' },
     )
     res.blobs.forEach((b, i) => downloadBlob(b, res.filenames[i]!))
     message.success(`已导出 ${res.blobs.length} 个文件（${res.filenames[0]} 等）`)
@@ -109,18 +102,6 @@ async function onExport(): Promise<void> {
               <NRadio v-for="o in formatOptions" :key="o.value" :value="o.value" :label="o.label" />
             </div>
           </NRadioGroup>
-        </div>
-
-        <!-- 清晰度 -->
-        <div class="row">
-          <span class="row-label">清晰度</span>
-          <NSelect
-            v-model:value="scale"
-            :options="scaleOptions"
-            size="small"
-            style="width: 200px"
-            :consistent-menu-width="false"
-          />
         </div>
 
         <!-- 明细行数（验证多页导出） -->

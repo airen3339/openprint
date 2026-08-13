@@ -5,19 +5,18 @@
  *
  * 覆盖优先级（高 → 低）：
  *   1. 用户在「设置 → 本地打印」里填的 IP/端口（localStorage `openprint:print-settings`）
- *   2. 构建期环境变量 `VITE_OPENPRINT_PRINTER_BASE`（项目根 .env）
- *   3. 出厂默认 http://127.0.0.1:18888
+ *   2. 出厂默认 http://127.0.0.1:18888
+ *
+ * 客户端已支持局域网打印：手填局域网地址（如 http://192.168.1.20:19000）即可直接推送，
+ * 手填地址优先级最高。
  *
  * 主任铁律：无后端全链路可用 —— 这里只读本地存储与构建期常量，绝不请求任何后端。
  */
 import { DEFAULT_PRINTER_BASE_URL } from '@/core/print-client'
 import { PRINT_SETTINGS_KEY } from './print-settings'
 
-/** 构建期环境变量覆盖（示例：VITE_OPENPRINT_PRINTER_BASE=http://192.168.1.20:19000） */
-const ENV_PRINTER_BASE = (import.meta.env.VITE_OPENPRINT_PRINTER_BASE ?? '').trim()
-
 /** 地址来源，UI 用于提示用户当前生效的是哪一层配置 */
-export type PrinterBaseSource = 'settings' | 'env' | 'default'
+export type PrinterBaseSource = 'settings' | 'default'
 
 /** 出厂默认，供 UI 占位/重置使用 */
 export const FACTORY_PRINTER_BASE_URL = DEFAULT_PRINTER_BASE_URL
@@ -72,22 +71,11 @@ export function resolvePrinterBaseUrl(): string {
     const base = buildPrinterBase(stored.host, stored.port)
     if (base) return base
   }
-  if (ENV_PRINTER_BASE) {
-    const base = normalizePrinterBase(ENV_PRINTER_BASE)
-    if (base) return base
-  }
   return FACTORY_PRINTER_BASE_URL
 }
 
 /** 当前地址来自哪一层配置（UI 提示用） */
 export function resolvePrinterBaseSource(): PrinterBaseSource {
   if (readStoredPrinterEndpoint()) return 'settings'
-  if (ENV_PRINTER_BASE) return 'env'
   return 'default'
 }
-
-/** 是否存在构建期环境变量覆盖（设置面板里给出说明） */
-export const hasEnvPrinterBase = ENV_PRINTER_BASE.length > 0
-
-/** 环境变量原值（仅用于设置面板展示） */
-export const envPrinterBase = ENV_PRINTER_BASE

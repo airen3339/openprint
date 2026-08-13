@@ -139,13 +139,31 @@ export async function listPrinters(
   return data.printers.map((p, i) => normalizePrinter(p ?? {}, i))
 }
 
+/* ------------------------------ 任务号生成 ------------------------------ */
+
+/**
+ * 生成打印任务号（Web 端生成，随请求下发给本地客户端）。
+ * 格式：`MMDD`（今日月日，如 0813）+ 6 位随机数字，共 10 位。
+ * 例：`0813` + `482913` → `0813482913`。
+ * @param now 可选，默认当前时间（便于单测注入）
+ */
+export function generateJobId(now: Date = new Date()): string {
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const rand = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+  return `${mm}${dd}${rand}`
+}
+
 /* ------------------------------ POST /print ------------------------------ */
 
 /**
  * 提交打印任务。
  * 载荷约定（见《打印机数据交互文档》）：
- * - 单页 → `format:'svg'`，`encoding:'utf8'`，content 为 SVG 原文
- * - 多页 → `format:'pdf'`，`encoding:'base64'`，content 为 base64（无 data: 前缀）
+ * - **统一** `format:'pdf'`，`encoding:'base64'`，content 为 PDF base64（无 data: 前缀）。
+ *   PDF 内部位图底图默认 PNG（无损·最高清），文字/线条边缘真正锐利，打印推荐。
+ *   本地客户端用 `QPrinter` 打印位图 PDF。
+ * - `'svg'` 已废弃（Qt QSvgRenderer 不支持 foreignObject/HTML/CSS），类型保留仅作向后兼容。
+ * - `job.jobId` 由 Web 端生成（generateJobId）；服务端若回传自己的 jobId 则以服务端为准。
  */
 export async function submitPrintJob(
   job: PrintJobRequest,
@@ -164,7 +182,7 @@ export async function submitPrintJob(
   if (data.ok !== true) {
     throw new PrintClientError('service', data.message || '打印客户端拒绝了本次任务')
   }
-  return { ok: true, jobId: data.jobId, message: data.message }
+  return { ok: true, jobId: data.jobId ?? job.jobId, message: data.message }
 }
 
 /* ------------------------------ 工具 ------------------------------ */

@@ -23,9 +23,7 @@ import {
 } from '@/config/print-settings'
 import {
   buildPrinterBase,
-  envPrinterBase,
   FACTORY_PRINTER_BASE_URL,
-  hasEnvPrinterBase,
 } from '@/config/printer'
 import { checkHealth, listPrinters, describePrintError } from '@/core/print-client'
 import {
@@ -279,11 +277,8 @@ function copyToClipboard(value: string, label: string): void {
               —— 打印机探测（/health、/printers）与任务推送（/print）都走这个地址。
             </NText>
             <NText depth="3" class="block text-12px mt-1">
-              出厂默认 {{ FACTORY_PRINTER_BASE_URL }}；这里填的地址优先级最高，会覆盖构建期环境变量
-              <code>VITE_OPENPRINT_PRINTER_BASE</code>。
-              <template v-if="hasEnvPrinterBase">
-                当前环境变量为 <b>{{ envPrinterBase }}</b>（仅在此处留空时生效）。
-              </template>
+              出厂默认 {{ FACTORY_PRINTER_BASE_URL }}；可手动改为局域网地址（客户端已支持局域网打印），
+              手动填写的地址优先级最高。
             </NText>
           </div>
 

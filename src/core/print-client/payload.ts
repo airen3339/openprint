@@ -1,27 +1,28 @@
 /**
  * 打印载荷构建 —— 模板 + 数据 → 推送给本地打印客户端的文档内容
  *
- * 推送格式规则（主任定，2026-08-12）：
- * - **单页** → SVG（矢量原文，utf8）。体积小、矢量无损，客户端可直接送打印或转 EMF。
- * - **多页** → PDF（base64）。PDF 天然多页，base64 后可走 JSON 传输。
+ * 推送格式规则（2026-08-13 最终定案）：
+ * - **统一推 PDF（base64）**，不论单页或多页。
  *
- * 只 render 一次：先 `renderDocument()` 拿到 LayoutResult 判定页数，
- * 再按页数走对应导出器，避免 `exportDocument()` 内部二次分页。
+ * 演进历程：
+ * - 早期单页走 SVG 原文 → Qt `QSvgRenderer` 不解析 foreignObject/HTML/CSS，打不出内容（已废弃）。
+ * - 中间试过单页走 JPG → 但 JPG 是单张位图、没有页面尺寸/DPI 元数据，不如 PDF 适合打印；
+ *   且用户希望打印格式统一便于客户端处理。最终回到统一 PDF。
+ *
+ * 清晰度优先：PDF 内部位图底图默认 **PNG（无损·最高清）**，文字/线条边缘真正锐利，
+ * 打印推荐。体积较大（纯文字页 ~10+ MB）；体积敏感场景可传 `imageType: 'jpeg'`。
  */
 import type { RenderRequest } from '@/core/sdk'
 import { renderDocument } from '@/core/sdk'
-import { documentToPdf, documentToSvgString } from '@/core/export-engine'
-import type { FontFaceDef } from '@/core/export-engine'
-import { templateUsedFonts, toExportFontDefs } from '@/core/fonts/loader'
+import { documentToPdf } from '@/core/export-engine'
 import { blobToBase64 } from './client'
-import type { PrintPayloadEncoding, PrintPayloadFormat } from './types'
 
 export interface PrintPayload {
-  /** 载荷格式：单页 svg / 多页 pdf */
-  format: PrintPayloadFormat
-  /** 载荷编码：svg=utf8 / pdf=base64 */
-  encoding: PrintPayloadEncoding
-  /** 文档内容 */
+  /** 载荷格式：恒为 pdf */
+  format: 'pdf'
+  /** 载荷编码：恒为 base64 */
+  encoding: 'base64'
+  /** PDF 的 base64 字符串（不含 data: 前缀） */
   content: string
   /** 总页数 */
   pages: number
@@ -30,16 +31,23 @@ export interface PrintPayload {
 }
 
 export interface BuildPrintPayloadOptions {
-  /** PDF 位图底图倍率，默认 2（192dpi） */
+  /** 位图倍率，默认 3（288dpi·最高清）；要更锐可传 4 */
   scale?: number
   /**
-   * 需要内联进 SVG 的字体。不传则自动从模板里提取用到的内置字体，
-   * 保证客户端渲染 SVG 时中文不掉字（SVG 是隔离上下文，看不到宿主 @font-face）。
+   * 多页 PDF 的位图底图压缩格式（默认 `'png'`，无损最清晰）：
+   * - `'png'`：无损，文字/线条边缘锐利，打印推荐；
+   * - `'jpeg'`：体积小，仅体积敏感场景。
    */
-  fonts?: FontFaceDef[]
+  imageType?: 'jpeg' | 'png'
 }
 
-/** 构建推送载荷（单页 SVG / 多页 PDF-base64） */
+/**
+ * 构建推送载荷（统一 PDF-base64）。
+ *
+ * 不论单页或多页，都先 `renderDocument()` → `documentToPdf()`（浏览器内用 Chromium
+ * 栅格化 foreignObject 内容成位图底图，默认 PNG 无损最高清）→ `blobToBase64()`。
+ * 本地客户端拿到的就是可直接 `QPrinter` 打印的 PDF 字节流。
+ */
 export async function buildPrintPayload(
   request: RenderRequest,
   options: BuildPrintPayloadOptions = {},
@@ -48,15 +56,19 @@ export async function buildPrintPayload(
   const pages = result.pages.length
   const deco = request.output?.pageDecoration
 
-  if (pages <= 1) {
-    const fonts = options.fonts ?? toExportFontDefs(templateUsedFonts(request.template))
-    const svg = await documentToSvgString(result, fonts.length ? fonts : undefined, deco)
-    return { format: 'svg', encoding: 'utf8', content: svg, pages: Math.max(pages, 1), bytes: svg.length }
-  }
-
-  const blob = await documentToPdf(result, { scale: options.scale ?? 2, pageDecoration: deco })
+  const blob = await documentToPdf(result, {
+    scale: options.scale ?? 3,
+    imageType: options.imageType ?? 'png',
+    pageDecoration: deco,
+  })
   const base64 = await blobToBase64(blob)
-  return { format: 'pdf', encoding: 'base64', content: base64, pages, bytes: base64.length }
+  return {
+    format: 'pdf',
+    encoding: 'base64',
+    content: base64,
+    pages: Math.max(pages, 1),
+    bytes: base64.length,
+  }
 }
 
 /** 人类可读体积（UI 提示用） */
