@@ -87,6 +87,13 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
       height: 60,
       dataSource: 'items',
       printable: true,
+      data: [
+        { productCode: 'PD-1001', productName: '无线鼠标', spec: '2.4G', unit: '个', qty: 2, price: 45.0, amount: 90.0 },
+        { productCode: 'PD-1002', productName: '机械键盘', spec: '87键', unit: '个', qty: 1, price: 320.0, amount: 320.0 },
+        { productCode: 'PD-1003', productName: 'USB集线器', spec: '4口', unit: '个', qty: 3, price: 65.0, amount: 195.0 },
+        { productCode: 'PD-1004', productName: '六类网线', spec: '1.5m', unit: '根', qty: 5, price: 12.0, amount: 60.0 },
+        { productCode: 'PD-1005', productName: '高清摄像头', spec: '1080P', unit: '个', qty: 1, price: 180.0, amount: 180.0 },
+      ],
       columns: [
         { title: '序号', expression: '{{rowIndex + 1}}', width: 14, align: 'center', headerAlign: 'center' },
         { title: '商品编码', field: 'productCode', width: 26, align: 'left', headerAlign: 'center' },

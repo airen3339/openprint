@@ -21,6 +21,7 @@ import { renderPage, generateCss } from '@/core/renderer-html'
 import type { LayoutResult } from '@/core/layout-engine/types'
 import type { PageDecoration } from '@/types/template'
 import { embedFontsInSvg, type FontFaceDef } from './fonts'
+import { KATEX_FONT_DEFS } from '@/core/mathkit/katex-css'
 
 /** HTML 转 XML 安全的 void 标签集合（foreignObject 走 XML 解析，未闭合会整页渲染失败） */
 const VOID_TAGS = new Set([
@@ -266,7 +267,11 @@ export async function pageToImageBlob(
   // 先内联图片为 data URI，再进 SVG 栅格化 —— 防止外部图污染 canvas 导致 toBlob 失败
   const pageHtml = await inlinePageImages(renderPage(page, deco?.watermark))
   let svg = buildPageSvg(pageHtml, css, result.metrics.pageWidth, result.metrics.pageHeight)
-  if (opts.fonts?.length) svg = await embedFontsInSvg(svg, opts.fonts)
+  // 含公式的页面追加 KaTeX 字体（data-URI 注入，解决 SVG 隔离上下文取不到公共字体的问题）
+  const extraFonts: FontFaceDef[] = pageHtml.includes('katex') ? KATEX_FONT_DEFS : []
+  if (opts.fonts?.length || extraFonts.length) {
+    svg = await embedFontsInSvg(svg, [...(opts.fonts ?? []), ...extraFonts])
+  }
   const canvas = await svgToCanvas(svg, opts.scale ?? 3, opts.background ?? '#ffffff')
   const type = opts.type ?? 'image/png'
   const quality = type === 'image/jpeg' ? opts.quality ?? 1 : undefined

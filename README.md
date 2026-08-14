@@ -5,7 +5,7 @@
 <h1 align="center">OpenPrint</h1>
 
 <p align="center">
-  <strong>开源 Web 打印设计器 · AI 驱动 · 跨平台</strong>
+  <strong>开源 Web 打印设计器 · AI 驱动 · 框架无关 · 跨平台</strong>
 </p>
 
 <p align="center">
@@ -13,6 +13,7 @@
   <a href="https://github.com/your-repo/open-print/releases"><img src="https://img.shields.io/github/v/release/your-repo/open-print?style=flat-square&logo=github" alt="Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
   <a href="https://vuejs.org/"><img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" /></a>
+  <a href="https://www.naiveui.com/"><img src="https://img.shields.io/badge/Naive_UI-18A058?style=flat-square&logo=naiveui&logoColor=white" alt="Naive UI" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="https://github.com/fabricjs/fabric.js"><img src="https://img.shields.io/badge/Fabric.js-7.x-blue?style=flat-square" alt="Fabric.js" /></a>
   <a href="https://www.npmjs.com/package/openprint26"><img src="https://img.shields.io/npm/v/openprint26?style=flat-square&logo=npm&logoColor=white" alt="npm" /></a>
@@ -31,6 +32,8 @@
 **OpenPrint** 是一款开源、零后端依赖的 Web 打印模板可视化设计器。它让用户通过拖拽即可设计快递面单、发票、标签、报表等打印模板，支持 AI 一句话生成、云打印、C++ 桌面客户端静默打印，3 分钟即可对接 ERP 系统。
 
 > 纯前端架构，无需服务器，无需数据库，一个浏览器即可运行。
+
+> **框架无关设计** — 核心渲染引擎与 UI 层完全解耦，设计器基于 Vue 3 + Naive UI 构建，渲染引擎使用纯 TypeScript 实现，可无缝接入 React、Vue、Angular、原生 JS 等任意技术栈。
 
 ![设计器界面](screenshots/designer-overview.png)
 *所见即所得的打印模板设计器，拖拽控件、实时预览*
@@ -55,6 +58,22 @@
 ---
 
 ## 核心亮点
+
+### 🔌 框架无关，引擎与 UI 解耦
+
+OpenPrint 采用**引擎层与 UI 层分离**的架构设计：
+
+- **渲染引擎**（`@openprint/engine`）— 纯 TypeScript 实现，零框架依赖，负责模板解析、数据绑定、分页排版、HTML/PDF/SVG 渲染导出
+- **设计器 UI**（`openprint26`）— 基于 Vue 3 + Naive UI 构建可视化拖拽设计器
+
+无论你的项目用 **React、Vue、Angular** 还是 **原生 JS**，都能轻松集成：
+
+| 接入方式 | 说明 |
+|----------|------|
+| **Vue 3 项目** | 直接安装 `openprint26`，使用 `<OpenPrintDesigner />` 组件 |
+| **React 项目** | 通过引擎 SDK 渲染模板，或用 Web Components 包装设计器 |
+| **Angular 项目** | 引擎 SDK 渲染 + iframe 嵌入设计器 |
+| **原生 JS / 任何框架** | 引擎 SDK 零依赖，`renderTemplate(json, data)` 即可输出 HTML |
 
 ### 🤖 AI 一句话生成模板
 
@@ -94,7 +113,8 @@ AI 输出： 自动创建模板 → 布局文本控件 → 添加条码 → 一�
 | **拖拽设计** | 所见即所得，自由拖拽 + 吸附对齐 + 标尺辅助 |
 | **多页支持** | 多页设计，每页独立页眉页脚，页间距可调 |
 | **数据绑定** | 支持 JSON / CSV / API 数据源，Mustache 表达式绑定 |
-| **主题切换** | 深色/浅色主题，一键切换 |
+| **主题切换** | 基于 Naive UI 的深色/浅色主题，一键切换 |
+| **框架无关** | 引擎层纯 TypeScript，支持 React/Vue/Angular/原生 JS |
 | **模板管理** | 本地存储，模板导入/导出，模板市场 |
 | **实时预览** | 预览数据绑定效果，分页预览 |
 | **导出** | PDF / JPG / SVG / HTML 多格式导出 |
@@ -108,14 +128,21 @@ AI 输出： 自动创建模板 → 布局文本控件 → 添加条码 → 一�
 
 ### 技术栈
 
+#### 设计器 UI 层
+
 ![Vue 3](https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Naive UI](https://img.shields.io/badge/Naive_UI-18A058?style=flat-square&logo=naiveui&logoColor=white)
 ![Fabric.js](https://img.shields.io/badge/Fabric.js-7.x-blue?style=flat-square)
 ![Pinia](https://img.shields.io/badge/Pinia-FFD859?style=flat-square&logo=pinia&logoColor=black)
+
+#### 核心引擎层（框架无关）
+
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white)
-![Naive UI](https://img.shields.io/badge/Naive_UI-2E7D32?style=flat-square)
 ![UnoCSS](https://img.shields.io/badge/UnoCSS-333333?style=flat-square&logo=unocss&logoColor=white)
+
+> 引擎层零框架依赖，设计器 UI 基于 Vue 3 + Naive UI。React / Angular / 原生 JS 项目均可通过引擎 SDK 集成。
 
 ---
 
@@ -134,7 +161,7 @@ pnpm add openprint26
 yarn add openprint26
 ```
 
-#### 在项目中使用
+### Vue 3 项目使用
 
 ```ts
 import { createApp } from 'vue'
@@ -150,6 +177,55 @@ app.mount('#app')
 <template>
   <OpenPrintDesigner />
 </template>
+```
+
+### React 项目使用
+
+设计器通过 iframe 嵌入，渲染引擎通过 SDK 直接调用：
+
+```tsx
+import { useEffect, useRef } from 'react'
+import { renderTemplate, exportPDF } from 'openprint26/sdk'
+
+export default function App() {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // 引擎渲染 — 零框架依赖，直接输出 HTML
+    const html = renderTemplate(templateJson, data)
+    containerRef.current!.innerHTML = html
+  }, [])
+
+  return (
+    <>
+      {/* 设计器：iframe 嵌入 */}
+      <iframe src="/openprint/designer.html" width="100%" height="600" />
+      {/* 渲染输出 */}
+      <div ref={containerRef} />
+    </>
+  )
+}
+```
+
+### 原生 JS / 任意框架使用
+
+```ts
+// 引擎 SDK — 零依赖，纯 TypeScript
+import { renderTemplate, exportPDF } from 'openprint26/sdk'
+
+// 1. 渲染模板为 HTML
+const html = renderTemplate(templateJson, {
+  sender_name: '张三',
+  receiver_name: '李四',
+  tracking_no: 'SF1234567890',
+})
+document.getElementById('print-area').innerHTML = html
+
+// 2. 导出 PDF
+const pdfBlob = await exportPDF(templateJson, data)
+
+// 3. 设计器通过 iframe 嵌入
+// <iframe src="openprint26/designer.html" />
 ```
 
 ### 从源码运行
@@ -212,48 +288,59 @@ OpenPrint 内置 AI 助手，支持自然语言生成打印模板。
 
 ## 技术架构
 
+OpenPrint 采用 **引擎层与 UI 层分离** 的架构，核心引擎零框架依赖，可被任意前端框架调用：
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       浏览器（Vue 3 SPA）                        │
-│                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ 控制面板  │  │ 属性面板  │  │ 图层面板  │  │  数据源面板   │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬────────┘  │
-│       └──────────────┴─────────────┴───────────────┘           │
-│                           │                                    │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Fabric.js Canvas                       │  │
-│  │  文本 │ 图片 │ 条码 │ 二维码 │ 表格 │ 图表 │ 矩形 │ 圆形 │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                           │                                    │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    排版引擎 (Layout Engine)               │  │
-│  │  数据绑定 │ 表达式计算 │ 分页引擎 │ 表格引擎 │ 分组引擎  │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                           │                                    │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    渲染引擎 (Renderer)                    │  │
-│  │  HTML渲染 │ PDF导出 │ JPG导出 │ SVG导出 │ 头部渲染     │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                             │
-                    ┌────────┴────────┐
-                    ▼                 ▼
-           ┌──────────────┐  ┌──────────────┐
-           │ C++ Qt 客户端 │  │ 云打印服务    │
-           │ 静默打印      │  │ 远程打印      │
-           │ 本地打印机    │  │ 队列管理      │
-           └──────────────┘  └──────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        UI 层（可替换）                               │
+│                                                                     │
+│   ┌─────────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
+│   │ Vue 3 + Naive UI │  │   React      │  │ 原生 JS / Angular     │ │
+│   │ 设计器（官方）   │  │  自定义 UI   │  │ iframe / Web Component│ │
+│   └────────┬────────┘  └──────┬───────┘  └──────────┬────────────┘ │
+│            └───────────────────┴─────────────────────┘              │
+│                                │ SDK API                            │
+╞════════════════════════════════╪═══════════════════════════════════╡
+│                        引擎层（框架无关）                           │
+│                                ▼                                    │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │              排版引擎 (Layout Engine) — 纯 TypeScript         │ │
+│  │   数据绑定 │ 表达式计算 │ 分页引擎 │ 表格引擎 │ 分组引擎     │ │
+│  └───────────────────────────┬───────────────────────────────────┘ │
+│                              ▼                                     │
+│  ┌───────────────────────────────────────────────────────────────┐ │
+│  │              渲染引擎 (Renderer) — 纯 TypeScript              │ │
+│  │   HTML 渲染 │ PDF 导出 │ JPG 导出 │ SVG 导出 │ 富文本渲染    │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                      ┌────────┴────────┐
+                      ▼                 ▼
+             ┌──────────────┐  ┌──────────────┐
+             │ C++ Qt 客户端 │  │ 云打印服务    │
+             │ 静默打印      │  │ 远程打印      │
+             └──────────────┘  └──────────────┘
 ```
+
+### 分层说明
+
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| **设计器 UI** | Vue 3 + Naive UI + Fabric.js | 官方可视化设计器，提供拖拽、属性面板、图层管理等交互 |
+| **排版引擎** | 纯 TypeScript | 模板解析、数据绑定、分页、表格、分组、表达式计算 |
+| **渲染引擎** | 纯 TypeScript | HTML/PDF/JPG/SVG 多格式渲染导出，零框架依赖 |
+| **AI 助手** | TypeScript | LLM 意图解析、模板生成、上下文管理 |
+| **桌面客户端** | C++ + Qt | 静默打印、批量打印、打印机管理 |
 
 ### 核心模块
 
 | 模块 | 路径 | 说明 |
 |------|------|------|
-| **设计器** | `src/design/` | Canvas 设计器、控件系统、面板、工具栏 |
-| **排版引擎** | `src/core/layout-engine/` | 数据绑定、分页、表格、分组、表达式 |
-| **渲染引擎** | `src/core/renderer-html/` | HTML 渲染、CSS 生成、富文本渲染 |
-| **导出引擎** | `src/core/export-engine/` | PDF、JPG、SVG 导出 |
+| **排版引擎** | `src/core/layout-engine/` | 数据绑定、分页、表格、分组、表达式（框架无关） |
+| **渲染引擎** | `src/core/renderer-html/` | HTML 渲染、CSS 生成、富文本渲染（框架无关） |
+| **导出引擎** | `src/core/export-engine/` | PDF、JPG、SVG 导出（框架无关） |
+| **SDK** | `src/core/sdk/` | 引擎对外 API 封装，供任意框架调用 |
+| **设计器** | `src/design/` | Vue 3 + Naive UI 设计器界面 |
 | **AI 助手** | `src/ai/` | AI 生成模板、上下文管理 |
 | **控件库** | `src/design/canvas/controls/` | 10 种 Fabric.js 控件 |
 
@@ -395,6 +482,14 @@ npm i openprint26
 ```
 
 详细用法见 [快速开始](#快速开始) 章节。
+
+### 支持 React / Angular / 原生 JS 吗？
+
+支持。OpenPrint 的核心渲染引擎使用纯 TypeScript 实现，零框架依赖。设计器基于 Vue 3 + Naive UI 构建，可通过 iframe 或 Web Components 嵌入任意框架项目。引擎 SDK 提供 `renderTemplate()`、`exportPDF()` 等方法，在任何 JS 环境中均可直接调用。
+
+### 设计器用了什么 UI 组件库？
+
+设计器界面基于 [Naive UI](https://www.naiveui.com/) 构建，搭配 Vue 3 + Fabric.js。Naive UI 提供了完整的深色/浅色主题支持、丰富的组件库和优秀的开发体验。
 
 ### OpenPrint 需要后端服务吗？
 

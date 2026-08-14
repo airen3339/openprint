@@ -132,6 +132,15 @@ const isZone = computed(() => control.value?.type === 'zone')
   color: var(--brand-text-3);
   margin-bottom: 8px;
   text-transform: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.props-title-tip {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--brand-primary, #3b82f6);
+  opacity: 0.85;
 }
 .props-row {
   display: flex;

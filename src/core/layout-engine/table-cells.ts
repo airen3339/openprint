@@ -16,8 +16,45 @@
  */
 import type { TableCell, TableCellStyle, TableColumn, TableControl } from '@/types/control'
 import { isAggToken, parseAggToken, stripItems } from './aggregate'
+import { ptToMm } from '@/core/units'
+import { getSharedMeasurer } from '@/core/layout-engine/measure'
 
 export const DEFAULT_HEADER_ROWS = 1
+
+/**
+ * 真实布局能力探测（带缓存）。
+ * Vitest 的 happy-dom / jsdom 虽定义了 document.body，但不实现 CSS 布局引擎，
+ * getBoundingClientRect 永远返回 0（见 measure.ts 顶部警告）。因此不能仅凭
+ * `document.body` 是否存在就判定"可用 DOM 测量"。这里实际量一个 10px 探针元素，
+ * 高度 > 0 才表示浏览器真排版 —— 此时 designRowHeights 走真实 DomMeasurer，
+ * 否则回落字符估算（单测结果可复现、与 createCjkMeasurer 同规则）。
+ */
+let _domLayoutReady: boolean | null = null
+function domSupportsLayout(): boolean {
+  if (_domLayoutReady !== null) return _domLayoutReady
+  if (typeof document === 'undefined' || !document.body) {
+    _domLayoutReady = false
+    return false
+  }
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:absolute;left:-99999px;top:0;visibility:hidden;width:10px;height:10px;padding:0;margin:0;border:0'
+  document.body.appendChild(probe)
+  const h = probe.getBoundingClientRect().height
+  probe.remove()
+  _domLayoutReady = h > 0
+  return _domLayoutReady
+}
+
+/* ─── 与 table-engine.ts 共享的排版常量（内联以避免循环导入）─── */
+/** 数据表行高估算用：字号 9pt、行高 1.35、垂直内边距 1.2mm、水平内边距 2mm、最小行高 6mm */
+const _TABLE_FONT_SIZE_PT = 9
+const _LINE_HEIGHT_FACTOR = 1.35
+const _CELL_PADDING_Y = 1.2
+const _CELL_PADDING_X = 2
+/** 单元格边框（与 tableCss `b-all td { border: 0.2mm }` 一致）；border-box 下占入行高 */
+const _BORDER_MM = 0.2
+const _MIN_ROW_HEIGHT = 6
 
 export type DesignRowKind = 'header' | 'data' | 'static'
 
@@ -172,13 +209,79 @@ export function buildDesignGrid(control: TableControl): DesignGrid {
 }
 
 /**
- * 设计期各可视行的行高（mm）—— **设计画布与运行期布局网格共用**，是"所见即所得"的根：
- * 表头按 8mm/行 分配（最多占 32% 高度），剩余高度由正文行均分，合计恰好 = 控件高度。
+ * 设计期各可视行的行高（mm）—— **设计画布与运行期共用**，是"所见即所得"的根。
  *
- * @param heightMm 控件高度（mm）。协议单位非 mm 时由调用方换算后传入。
+ * 两种算法按表格类型分流：
+ *
+ * - **布局网格**（无 dataSource，`isDataTable=false`）：
+ *   表头按 8mm/行 分配（最多占 32% 高度），剩余高度由正文行均分，合计恰好 = 控件高度。
+ *   这类表格本身就是「所见即所得」—— 画布上多高，打印就多高。
+ *
+ * - **数据表**（有 dataSource 或内嵌 data）：
+ *   渲染端完全忽略 `control.height`，按内容测量行高（auto 模式）或固定行高（fixed 模式）。
+ *   因此画布行高也必须走同一套算法，否则画布行高 ≈ 12mm 而渲染行高 ≈ 6mm，差 2 倍。
+ *   这里用与 `measureRowHeight`（table-engine.ts）完全一致的常量估算：
+ *   - fixed → `max(MIN_ROW_HEIGHT, options.rowHeight)`
+ *   - auto  → `fontSize * lineHeight + 2 * paddingY`（≈ 6.4mm 单行），表头同样。
+ *
+ * @param heightMm 控件高度（mm）。仅布局网格使用。协议单位非 mm 时由调用方换算后传入。
  */
 export function designRowHeights(control: TableControl, heightMm?: number): number[] {
   const grid = buildDesignGrid(control)
+
+  if (isDataTable(control)) {
+    // ── 数据表：与渲染端 measureRowHeight 一致 ──
+    const mode = control.options?.rowHeightMode ?? 'auto'
+    if (mode === 'fixed') {
+      const fixedH = Math.max(_MIN_ROW_HEIGHT, control.options?.rowHeight ?? 8)
+      return Array.from({ length: grid.rowCount }, () => fixedH)
+    }
+    // auto：逐行按内容换行测量，与渲染端 measureRowHeight 完全一致（共用同一款 DomMeasurer）。
+    //   - 绑定 / 表达式 / 聚合 token 单元格 → 画布强制 nowrap 单行（ellipsis），跳过不撑高
+    //   - 静态文本（表头标题、尾行标签如"本页合计/大写金额"）→ 按列宽真实排版换行
+    // 浏览器里走真实 DOM 测量（getSharedMeasurer），其字体/字号/行高/white-space 与 tableCss
+    // 完全一致，因此 control.height 像素级等于实际渲染高度，Fabric 选中框（= control.height）
+    // 严丝合缝包住表格四边，不再"下方露出"。无 DOM（单测 / node）回落到字符宽度估算。
+    const colWidths = designColWidths(control)
+    if (domSupportsLayout()) {
+      const measurer = getSharedMeasurer()
+      return grid.cells.map((row, r) => {
+        const kind = designRowInfo(grid, r).kind
+        let maxH = 0
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c]
+          if (!cell) continue
+          // 绑定 / 表达式 / 聚合 token 单元格：画布渲染为 nowrap 单行占位符，
+          // 仍要按单行高度计入行高（否则该行塌成 MIN_ROW_HEIGHT，而真实占位符占 ~1 行）。
+          const isPlaceholder = Boolean(cell.field || cell.expression || isAggToken(cell.text ?? ''))
+          const measured = isPlaceholder
+            ? cell.text || cell.field || cell.expression || ' '
+            : cell.text ?? ''
+          if (!measured) continue
+          const col = control.columns?.[c]
+          const style = resolveCellStyleFor(control, col, cell, kind)
+          // 列宽扣掉左右内边距与左右边框（border-box 下边框占入单元格宽度）；
+          // 行高再加回上下边框（border-box 下边框占入行高）。这样 designRowHeights
+          // 严格等于 border-box 单元格的真实渲染高度，Fabric 选中框（= control.height）
+          // 与表格内容四边严丝合缝；非 b-all 边框模式仅会略略偏保守（不露底）。
+          const avail = Math.max(1, (colWidths[c] ?? 0) - 2 * _CELL_PADDING_X - 2 * _BORDER_MM)
+          const { heightMm: h } = measurer.measure(measured, {
+            fontSize: style.fontSize ? Number(style.fontSize) : _TABLE_FONT_SIZE_PT,
+            fontWeight: style.bold ? 'bold' : 'normal',
+            widthMm: avail,
+            wrap: isPlaceholder ? false : true,
+          })
+          if (h > maxH) maxH = h
+        }
+        return Math.max(_MIN_ROW_HEIGHT, maxH + 2 * _CELL_PADDING_Y + 2 * _BORDER_MM)
+      })
+    }
+    const singleLineH = ptToMm(_TABLE_FONT_SIZE_PT) * _LINE_HEIGHT_FACTOR + 2 * _CELL_PADDING_Y
+    const baseH = Math.max(_MIN_ROW_HEIGHT, singleLineH)
+    return grid.cells.map((row) => Math.max(baseH, designRowContentHeight(row, colWidths)))
+  }
+
+  // ── 布局网格：按控件高度均分（画布 = 打印，真正所见即所得）──
   const totalH = Math.max(1, heightMm ?? control.height)
   const headerRows = grid.headerRows
   const bodyCount = Math.max(1, grid.rowCount - headerRows)
@@ -188,6 +291,62 @@ export function designRowHeights(control: TableControl, heightMm?: number): numb
   const out: number[] = []
   for (let r = 0; r < grid.rowCount; r++) out.push(r < headerRows ? headerRowH : bodyH)
   return out
+}
+
+/** 列宽缩放到控件总宽（mm）。width 未设时用原始列宽 */
+function designColWidths(control: TableControl): number[] {
+  const cols = control.columns ?? []
+  const raw = cols.map((c) => c.width ?? 30)
+  const sum = raw.reduce((a, b) => a + b, 0) || 1
+  const total = control.width ?? 0
+  const scale = total > 0 && sum > 0 ? total / sum : 1
+  return raw.map((w) => w * scale)
+}
+
+/** 字符级换行估算：CJK ≈ 1em，ASCII ≈ 0.6em（与测试测量器同规则）。保守余量 0.3mm */
+function ceilCharLines(text: string, widthMm: number): number {
+  const em = ptToMm(_TABLE_FONT_SIZE_PT)
+  let w = 0
+  let lines = 1
+  for (const ch of text) {
+    const cw = /[\x00-\xff]/.test(ch) ? em * 0.6 : em
+    if (w + cw > widthMm - 0.3) {
+      lines++
+      w = cw
+    } else {
+      w += cw
+    }
+  }
+  return lines
+}
+
+/** 单行设计期行高的内容估算：静态文本按列宽换行；绑定/聚合 token 画布 nowrap 单行 */
+function designRowContentHeight(row: TableCell[], colWidths: number[]): number {
+  let lines = 1
+  for (let c = 0; c < row.length; c++) {
+    const cell = row[c]
+    if (!cell) continue
+    if (cell.field || cell.expression || isAggToken(cell.text)) continue // nowrap 单行
+    const text = cell.text ?? ''
+    if (!text) continue
+    const avail = Math.max(1, (colWidths[c] ?? 0) - 2 * _CELL_PADDING_X)
+    lines = Math.max(lines, ceilCharLines(text, avail))
+  }
+  return lines * ptToMm(_TABLE_FONT_SIZE_PT) * _LINE_HEIGHT_FACTOR + 2 * _CELL_PADDING_Y
+}
+
+/**
+ * 数据表控件高度同步：让 `control.height` = 所有行高之和（含表头 + 数据样例行 + 静态尾行），
+ * 使得画布包围盒与实际渲染尺寸一致。布局网格不受影响（画布 = 打印）。
+ *
+ * 设计表增删行、改行高模式、改固定行高后都应调用此函数，避免画布包围盒与渲染尺寸脱节。
+ */
+export function syncDataTableHeight(control: TableControl): TableControl {
+  if (!isDataTable(control)) return control
+  const heights = designRowHeights(control)
+  const totalH = heights.reduce((s, h) => s + h, 0)
+  if (Math.abs((control.height ?? 0) - totalH) < 0.01) return control
+  return { ...control, height: totalH }
 }
 
 /** 把任意 cells 矩阵归一化为 rowCount × colCount（不足补空、超出截断） */
@@ -699,16 +858,16 @@ export function seedSummaryTail(control: TableControl, opts: SeedTailOptions = {
 
   const makeRow = (label: string, token: string | null): TableCell[] =>
     Array.from({ length: colCount }, (_, c) => {
-      if (c === 0) return { text: label, style: { bold: true, align: 'left' } }
-      if (token && numeric.has(c)) return { text: token, style: { bold: true, align: 'right' } }
+      if (c === 0) return { text: label, style: { bold: true, align: 'center' } }
+      if (token && numeric.has(c)) return { text: token, style: { bold: true, align: 'center' } }
       return {}
     })
   const pageRow = makeRow('本页合计', '{{#pageSum}}')
   const totalRow = makeRow('总计', '{{#totalSum}}')
   const withCap = opts.capital ?? true
   const capRow: TableCell[] = Array.from({ length: colCount }, (_, c) => {
-    if (c === 0) return { text: '大写金额', style: { bold: true, align: 'left' } }
-    if (c === money) return { text: '{{#totalCap}}', style: { bold: true, align: 'left' } }
+    if (c === 0) return { text: '大写金额', style: { bold: true, align: 'center' } }
+    if (c === money) return { text: '{{#totalCap}}', style: { bold: true, align: 'center' } }
     return {}
   })
 

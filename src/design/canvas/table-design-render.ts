@@ -117,7 +117,11 @@ function cellStyle(
   if (s.valign) parts.push(`vertical-align:${s.valign}`)
   if (s.backgroundColor) parts.push(`background-color:${s.backgroundColor}`)
   if (s.diagonal) parts.push(diagonalBackground(s.diagonal))
-  if (placeholder) parts.push(`color:${PLACEHOLDER}`)
+  // 占位符（字段绑定 / 聚合 token）强制单行：长文本（如 {{item.productCode}}）换行会把
+  // 画布行高撑得比 designRowHeights 的单行估算高，导致表格实际总高 > 包围盒，
+  // 末尾的「大写金额」等行被 overlay 的 overflow:hidden 裁掉（看不见、拉大才出现）。
+  // 超出部分省略号截断，仅提示绑定关系；运行期按真实数据换行不受影响。
+  if (placeholder) parts.push(`color:${PLACEHOLDER}`, 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis')
   else if (s.color) parts.push(`color:${s.color}`)
   return parts.join(';')
 }

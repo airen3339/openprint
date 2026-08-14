@@ -21,6 +21,7 @@ import {
 } from '@/core/layout-engine/table-engine'
 import type { PageMetrics } from '@/core/layout-engine/types'
 import type { PageDecoration } from '@/types/template'
+import { KATEX_STYLE_CSS, KATEX_FONT_CSS } from '@/core/mathkit/katex-css'
 
 /** 设计画布文本控件的默认值（PrintText.styleToFabric），渲染端必须一致才能所见即所得 */
 export const TEXT_DEFAULT_FONT_SIZE = 12
@@ -272,24 +273,27 @@ html, body {
   white-space: nowrap;
 }
 
-/* 页边距内的内容盒；页眉/正文/页脚在其中垂直分区 */
+/* Word 式布局：正文独占边距间内容区；页眉/页脚在上下边距内，作为 .op-page 的直接子元素 */
 .op-content {
   position: absolute;
   left: ${mmv(margin.left)};
   top: ${mmv(margin.top)};
   width: ${mmv(contentWidth)};
-  height: ${mmv(contentHeight)};
+  /* 延伸到页底：正文控件可自由落进下边距区（边距只作设计辅助，整页渲染不裁剪） */
+  height: ${mmv(pageHeight - margin.top)};
 }
 
 .op-section {
   position: absolute;
-  left: 0;
-  width: 100%;
-  overflow: hidden;
+  width: ${mmv(contentWidth)};
+  /* 不裁剪：页边距只作设计辅助/拖动限制，渲染时边距外内容也必须可见（所见即所得） */
+  overflow: visible;
 }
-.op-header { top: 0; height: ${mmv(metrics.headerHeight)}; }
-.op-body   { top: ${mmv(metrics.headerHeight)}; height: ${mmv(metrics.bodyHeight)}; }
-.op-footer { top: ${mmv(metrics.headerHeight + metrics.bodyHeight)}; height: ${mmv(metrics.footerHeight)}; }
+/* 页眉/页脚：直接挂在 .op-page 上，左右贴边距 */
+.op-header { top: 0; left: ${mmv(margin.left)}; height: ${mmv(metrics.headerHeight)}; }
+.op-footer { bottom: 0; left: ${mmv(margin.left)}; height: ${mmv(metrics.footerHeight)}; }
+/* 正文：填满 .op-content，不再重复叠加边距 */
+.op-body { top: 0; left: 0; width: 100%; height: 100%; }
 
 /* -------------------------------- 控件 -------------------------------- */
 
@@ -345,6 +349,12 @@ html, body {
 
 /* -------------------------------- 表格 -------------------------------- */
 ${tableCss()}
+
+/* ------------------------------ 数学公式（KaTeX） ------------------------------ */
+/* 样式规则（不含 @font-face）：预览 + 导出栅格化共用，使公式布局正确。
+   字体由预览（KATEX_FONT_CSS 同源加载）/ 导出（embedFontsInSvg 转 data-URI）分别注入。 */
+${KATEX_STYLE_CSS}
+${screen ? `\n/* KaTeX 字体（同源 /fonts/katex/，仅预览 iframe 可用） */\n${KATEX_FONT_CSS}\n` : ''}
 /* ------------------------------ 打印覆盖 ------------------------------ */
 
 @page {

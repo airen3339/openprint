@@ -80,6 +80,8 @@ export class CanvasDesigner {
   private spacePanning = false
   /** 用户手动缩放后置 true，窗口 resize 不再自动 refit */
   private userZoomed = false
+  /** 页边距锁定：默认开启，正文控件移动被钳制在内容区内；关闭后自由移动（边距仅参考线） */
+  private marginLocked = true
 
   /** 初始化画布。container 决定画布像素尺寸（ ResizeObserver 自适应） */
   init(el: HTMLCanvasElement, container: HTMLElement, events: CanvasDesignerEvents = {}): void {
@@ -150,28 +152,63 @@ export class CanvasDesigner {
 
   /* ------------------------ 页间留白（模型 mm 与画布 px 换算） ------------------------ */
   // 复用 page-gap.ts 纯函数，避免实现与 page-gap.spec.ts 测试逻辑分叉（单一真相来源）。
+  // Word 式布局（与渲染端 .op-content 一致）：正文控件 top 相对「内容区起点」（页顶 + 上边距），
+  // 页眉/页脚在上下边距内；正文可用高 = 页高 - 上下边距，越过即跨页。
 
-  /** 模型 top(mm, flush) 所在页索引 → 该页之前的累计页间距(px) */
+  /** 当前页眉色带高度（mm）；无页眉为 0 */
+  private get headerZoneMm(): number {
+    const z = this.getZones().find((z) => z.zone === 'header')
+    return z ? z.zoneHeightMm : 0
+  }
+
+  /** 当前页脚色带高度（mm）；无页脚为 0 */
+  private get footerZoneMm(): number {
+    const z = this.getZones().find((z) => z.zone === 'footer')
+    return z ? z.zoneHeightMm : 0
+  }
+
+  /**
+   * 正文控件分页步长（mm）= 页高 - 上边距。
+   * 正文 top ∈ [0, 步长) 均属当前页：下边距区（内容区底到页底）也允许落控件，
+   * 边距只作拖动限制/辅助（所见即所得），与渲染端 layoutStaticOnly 的 `floor(top/步长)` 一致。
+   */
+  private get bodyHeightMm(): number {
+    return Math.max(1, this.pageHeightMm - this.marginMm.top)
+  }
+
+  /** 模型 top(mm, 相对内容区) 所在页索引 → 该页之前的累计页间距(px) */
   private gapPx(topMm: number): number {
-    return pageGapPx(topMm, this.pageHeightMm, this.PAGE_GAP_PX)
+    return pageGapPx(topMm, this.bodyHeightMm, this.PAGE_GAP_PX)
   }
 
-  /** 模型 top(mm, flush) → 画布绝对 y(px)：页边距 + 页内偏移 + 累计页间距 */
+  /** 模型 top(mm, 相对内容区) → 画布绝对 y(px)：页序堆叠 + 上边距 + 页内偏移 + 累计页间距 */
   private modelTopToY(topMm: number): number {
-    return modelTopToCanvasY(topMm, this.marginMm.top * MM_TO_PX, this.pageHeightMm, this.PAGE_GAP_PX)
+    return modelTopToCanvasY(
+      topMm,
+      this.marginMm.top * MM_TO_PX,
+      this.bodyHeightMm,
+      this.pageHeightMm * MM_TO_PX,
+      this.PAGE_GAP_PX,
+    )
   }
 
-  /** 画布绝对 y(px) → 模型 top(mm, flush)：反解累计页间距（近页边界最多迭代 2 次收敛） */
+  /** 画布绝对 y(px) → 模型 top(mm, 相对内容区)：反解累计页间距 */
   private yToModelTop(y: number): number {
-    return canvasYToModelTop(y, this.marginMm.top * MM_TO_PX, this.pageHeightMm, this.PAGE_GAP_PX)
+    return canvasYToModelTop(
+      y,
+      this.marginMm.top * MM_TO_PX,
+      this.bodyHeightMm,
+      this.pageHeightMm * MM_TO_PX,
+      this.PAGE_GAP_PX,
+    )
   }
 
   /* -------------------------------- 页面 -------------------------------- */
 
   /**
-   * 由正文控件最低底部推导物理页数：floor(maxBottomMm / pageHeightMm) + 1。
-   * 与渲染端 layoutStaticOnly 的 `floor(top/bodyH)` 落页口径一致（body 控件按
-   * marginTop + top 绝对定位，越过内容区底部即落入下一页）。
+   * 由正文控件最低底部推导物理页数：floor(maxBottomMm / bodyHeightMm) + 1。
+   * 与渲染端 layoutStaticOnly 的 `floor(top/contentHeight)` 落页口径一致（body 控件按
+   * 上边距 + top 绝对定位，越过内容区底部即落入下一页）。
    */
   private computeContentPageCount(): number {
     let maxBottomMm = 0
@@ -182,7 +219,8 @@ export class CanvasDesigner {
       const bottom = topMm + obj.getScaledHeight() / MM_TO_PX
       if (bottom > maxBottomMm) maxBottomMm = bottom
     }
-    return computePhysicalPageCount(maxBottomMm, this.pageHeightMm)
+    // 物理页数按「正文可用高」推导：与渲染端 layoutStaticOnly 的 floor(top/bodyHeight) 一致
+    return computePhysicalPageCount(maxBottomMm, this.bodyHeightMm)
   }
 
   /** 有效物理页数 = max(内容推导, 手动分页下限)，最小 1 */
@@ -241,6 +279,9 @@ export class CanvasDesigner {
     const mb = this.marginMm.bottom * MM_TO_PX
     const bodyH = Math.max(1, pageH - mt - mb)
     const contentW = Math.max(1, pageW - ml - mr)
+    // 分页步长（= 页高 - 上边距）：分页虚线画在分页边界（页底上方），
+    // 静态控件 top 越过该边界才跨页（与渲染端 layoutStaticOnly 一致）
+    const bodyAreaH = this.bodyHeightMm * MM_TO_PX
     const bg = this.lastPageBackground || '#ffffff'
 
     // 第 2..N 页背景（按 stride 堆叠，带阴影）
@@ -287,7 +328,7 @@ export class CanvasDesigner {
 
     // 每页内容区底部的分页虚线（最后一页不画），并标注「分页」
     for (let i = 0; i < count - 1; i++) {
-      const y = i * stride + mt + bodyH
+      const y = i * stride + mt + bodyAreaH
       const line = new Line([ml, y, ml + contentW, y], {
         stroke: '#f5222d',
         strokeWidth: 1,
@@ -343,6 +384,45 @@ export class CanvasDesigner {
   setMarginGuidesVisible(visible: boolean): void {
     for (const g of this.pageGuides) g.visible = visible
     this.canvas.requestRenderAll()
+  }
+
+  /**
+   * 设置页边距锁定。
+   * - 锁定（默认）：正文控件移动被钳制在内容区内（页眉/页脚色带在边距内，仅高度可调）
+   * - 关闭：可自由移动/溢出到边距外，边距线仅作参考（内外都会打印）
+   * 开启时立即把已越界的正文控件拉回内容区。
+   */
+  setMarginLocked(locked: boolean): void {
+    this.marginLocked = locked
+    if (locked) {
+      for (const obj of this.getPrintObjects()) {
+        if (obj instanceof PrintZone) continue
+        this.clampToContentArea(obj)
+      }
+      this.canvas.requestRenderAll()
+    }
+  }
+
+  /** 把正文控件钳制在「当前所在页」的内容区内（含页边距，X/Y 均受限） */
+  private clampToContentArea(obj: PrintFabricObject): void {
+    const pageWpx = this.pageWidthMm * MM_TO_PX
+    const pageHpx = this.pageHeightMm * MM_TO_PX
+    const stride = pageHpx + this.PAGE_GAP_PX
+    const w = obj.getScaledWidth()
+    const h = obj.getScaledHeight()
+    // 所在页：按对象中心 y 落在第几个 stride 区间
+    const cy = (obj.top ?? 0) + h / 2
+    const i = Math.max(0, Math.floor(cy / stride))
+    const pageTop = i * stride
+    const minX = pageTop + this.marginMm.left * MM_TO_PX
+    const minY = pageTop + this.marginMm.top * MM_TO_PX
+    const maxX = pageTop + (pageWpx - this.marginMm.right * MM_TO_PX) - w
+    const maxY = pageTop + (pageHpx - this.marginMm.bottom * MM_TO_PX) - h
+    obj.set({
+      left: Math.max(minX, Math.min(maxX, obj.left ?? minX)),
+      top: Math.max(minY, Math.min(maxY, obj.top ?? minY)),
+    })
+    obj.setCoords()
   }
 
   /**
@@ -459,9 +539,12 @@ export class CanvasDesigner {
     this.canvas.requestRenderAll()
   }
 
-  /** 页边距内容区左上角（画布 px）—— body 控件协议坐标的原点 */
+  /** 内容区左上角（画布 px）= 页边距内 —— body 控件协议坐标的原点（页眉/页脚在边距内） */
   get contentOriginPx(): { x: number; y: number } {
-    return { x: this.marginMm.left * MM_TO_PX, y: this.marginMm.top * MM_TO_PX }
+    return {
+      x: this.marginMm.left * MM_TO_PX,
+      y: this.marginMm.top * MM_TO_PX,
+    }
   }
 
   /* ------------------------------- 控件 CRUD ------------------------------ */
@@ -489,6 +572,8 @@ export class CanvasDesigner {
     const obj = createFabricControl(control, {
       widthMm: this.pageWidthMm,
       heightMm: this.pageHeightMm,
+      marginLeftMm: this.marginMm.left,
+      marginRightMm: this.marginMm.right,
     })
     // 协议坐标（相对内容区/所属色带）→ 画布绝对坐标
     this.applySectionOrigin(obj, control, opts.zoneHostId)
@@ -734,7 +819,14 @@ export class CanvasDesigner {
 
     // 对象变换 / 视口变化 → 驱动表格 HTML overlay 重定位
     const bump = () => this.events.onTransformTick?.()
-    c.on('object:moving', bump)
+    // 边距锁定：正文控件移动时钳制在内容区内（页眉/页脚色带自身锁定位置，其子控件在边距区不受限）
+    c.on('object:moving', (e) => {
+      const obj = e.target
+      if (this.marginLocked && obj && isPrintObject(obj) && !(obj instanceof PrintZone) && !obj.zoneId) {
+        this.clampToContentArea(obj)
+      }
+      bump()
+    })
     c.on('object:scaling', bump)
     c.on('object:rotating', bump)
     c.on('object:modified', bump)

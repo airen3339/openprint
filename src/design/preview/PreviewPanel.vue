@@ -74,6 +74,8 @@ const WARNING_LABEL: Record<RenderWarning['code'], string> = {
   IMAGE_UNRESOLVED: '图片未解析',
   BARCODE_FAILED: '条码失败',
   CHART_FAILED: '图表失败',
+  MATH_FAILED: '公式失败',
+  SIGNATURE_EMPTY: '签名为空',
   PAGE_LIMIT_REACHED: '触达页数上限',
   ROW_TOO_TALL: '行高超页',
 }

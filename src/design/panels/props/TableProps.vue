@@ -483,6 +483,39 @@ function patchGroupBy(v: string | null): void {
   </div>
 
   <div v-if="control" class="props-section">
+    <div class="props-title">
+      行高
+      <span class="props-title-tip">画布与打印一致（所见即所得）</span>
+    </div>
+    <div class="props-row">
+      <span class="props-label" style="min-width: 88px">行高模式</span>
+      <NSelect
+        size="small"
+        :value="control.options?.rowHeightMode ?? 'auto'"
+        :options="[
+          { label: '自动（内容撑开）', value: 'auto' },
+          { label: '固定行高', value: 'fixed' },
+        ]"
+        @update:value="patchOptions({ rowHeightMode: $event })"
+      />
+    </div>
+    <div v-if="control.options?.rowHeightMode === 'fixed'" class="props-row">
+      <span class="props-label" style="min-width: 88px">行高 (mm)</span>
+      <NInputNumber
+        size="small"
+        button-placement="both"
+        :value="control.options?.rowHeight ?? 8"
+        :min="6"
+        :precision="1"
+        @update:value="patchOptions({ rowHeight: $event ?? 8 })"
+      />
+    </div>
+    <div class="props-tip">
+      自动：每行高度按实际内容自适应（单行 ≈ 6.7mm）；固定：所有行统一为指定高度，改后画布包围盒自动跟随。
+    </div>
+  </div>
+
+  <div v-if="control" class="props-section">
     <div class="props-title">列配置（{{ control.columns.length }} 列）</div>
     <div v-for="(col, i) in control.columns" :key="i" class="mb-2 rounded border border-brand-border p-2">
       <div class="mb-1.5 flex items-center justify-between">
@@ -721,29 +754,6 @@ function patchGroupBy(v: string | null): void {
   <div v-if="control" class="props-section">
     <NCollapse>
       <NCollapseItem title="高级选项" name="advanced">
-        <div class="props-row">
-          <span class="props-label" style="min-width: 88px">行高模式</span>
-          <NSelect
-            size="small"
-            :value="control.options?.rowHeightMode ?? 'auto'"
-            :options="[
-              { label: '自动（内容撑开）', value: 'auto' },
-              { label: '固定行高', value: 'fixed' },
-            ]"
-            @update:value="patchOptions({ rowHeightMode: $event })"
-          />
-        </div>
-        <div v-if="control.options?.rowHeightMode === 'fixed'" class="props-row">
-          <span class="props-label" style="min-width: 88px">行高 (mm)</span>
-          <NInputNumber
-            size="small"
-            button-placement="both"
-            :value="control.options?.rowHeight ?? 8"
-            :min="2"
-            :precision="1"
-            @update:value="patchOptions({ rowHeight: $event ?? 8 })"
-          />
-        </div>
         <div class="props-row">
           <span class="props-label" style="min-width: 88px">整行跨页换页</span>
           <NSwitch

@@ -192,8 +192,9 @@ function table(
   width: number,
   height: number,
   columns: TableColumn[],
-  options: TableOptions = {},
+  options: TableOptions & { data?: Array<Record<string, unknown>> } = {},
 ): AnyControl {
+  const { data, ...tableOptions } = options
   return {
     id,
     type: 'table',
@@ -203,13 +204,14 @@ function table(
     height,
     columns,
     printable: true,
+    ...(data ? { data } : {}),
     options: {
       repeatHeader: true,
       pageRows: 'auto',
       rowHeightMode: 'auto',
       borders: 'all',
       verticalAlign: 'middle',
-      ...options,
+      ...tableOptions,
     },
   }
 }
@@ -387,7 +389,7 @@ function buildFinancialReport(): TemplateData<AnyControl> {
     txt('fr-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
   ]
 
-  return fullPage(paper(210, 297), header, body, footer)
+  return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
 }
 
 /* ------------------------------ 模板定义 ------------------------------ */
@@ -435,7 +437,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '数量', field: 'qty', width: 14, align: 'right', headerAlign: 'center' },
           { title: '单价', field: 'price', width: 14, align: 'right', headerAlign: 'center' },
           { title: '金额', field: 'amount', width: 14, align: 'right', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { productCode: 'WL-0001', productName: '304 不锈钢板', spec: '1.0×1220×2440', unit: '张', qty: 8, price: 1850.0, amount: 14800.0 },
+            { productCode: 'WL-0002', productName: '热镀锌角钢', spec: '50×50×5', unit: '支', qty: 120, price: 95.0, amount: 11400.0 },
+            { productCode: 'WL-0003', productName: '镀锌焊接钢管', spec: 'DN25', unit: '米', qty: 80, price: 68.5, amount: 5480.0 },
+            { productCode: 'WL-0004', productName: '不锈钢膨胀螺栓', spec: 'M10×80', unit: '套', qty: 600, price: 6.8, amount: 4080.0 },
+            { productCode: 'WL-0005', productName: '硅酮结构胶', spec: '590ml', unit: '支', qty: 150, price: 22.0, amount: 3300.0 },
+          ],
+        }),
         txt('pch-total', 0, 85, w, 7, '合计金额（大写）：叁万捌仟陆佰元整', { fontSize: 11, fontWeight: 'bold' }),
         txt('pch-memo', 0, 93, w, 6, '备注：本单须经仓库验收确认后方可入库', { fontSize: 9, fill: '#555555' }),
         txt('pch-sign', 0, 103, w, 6, '验收：＿＿＿＿　　仓管：＿＿＿＿　　采购：＿＿＿＿　　制单：＿＿＿＿', { fontSize: 9 }),
@@ -444,7 +454,7 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
         txt('pch-brand', 0, 3, 90, 6, '本单据由 OpenPrint 生成', { fontSize: 8, fill: '#888888' }),
         txt('pch-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
   {
@@ -475,7 +485,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '单价（元）', field: 'price', width: 22, align: 'right', headerAlign: 'center' },
           { title: '小计（元）', field: 'amount', width: 24, align: 'right', headerAlign: 'center' },
           { title: '备注', field: 'memo', width: 16, align: 'left', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { productName: '工业平板电脑', spec: 'IPC-1501', unit: '台', qty: 10, price: 1280.0, amount: 12800.0, memo: '含支架' },
+            { productName: '串口服务器', spec: '4 口', unit: '台', qty: 20, price: 360.0, amount: 7200.0, memo: '' },
+            { productName: '交换机', spec: '24GE', unit: '台', qty: 5, price: 980.0, amount: 4900.0, memo: '含光模块' },
+            { productName: '超五类网线', spec: '305m/箱', unit: '箱', qty: 12, price: 420.0, amount: 5040.0, memo: '' },
+            { productName: '电源适配器', spec: '12V/5A', unit: '个', qty: 60, price: 65.0, amount: 3900.0, memo: '可定制' },
+          ],
+        }),
         txt('qt-total', 0, 88, w, 7, '合计金额（不含税）：￥38,600.00', { fontSize: 11, fontWeight: 'bold', textAlign: 'right' }),
         txt('qt-terms', 0, 97, w, 6, '付款方式：月结 30 天；交货周期：收到订单后 7 个工作日内', { fontSize: 9, fill: '#555555' }),
         txt('qt-note', 0, 104, w, 6, '以上报价含税 13%，如需开票请在下单时说明开票信息。', { fontSize: 9, fill: '#555555' }),
@@ -483,7 +501,7 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
       const footer: AnyControl[] = [
         txt('qt-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
   {
@@ -511,7 +529,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '单位', field: 'unit', width: 12, align: 'center', headerAlign: 'center' },
           { title: '数量', field: 'qty', width: 16, align: 'right', headerAlign: 'center' },
           { title: '备注', field: 'memo', width: 42, align: 'left', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { productName: '瓶装饮用水 550ml', unit: '箱', qty: 20, memo: '整箱 24 瓶' },
+            { productName: '方便面', unit: '箱', qty: 10, memo: '整箱 30 袋' },
+            { productName: '抽纸', unit: '提', qty: 15, memo: '' },
+            { productName: '洗洁精', unit: '瓶', qty: 12, memo: '2L 装' },
+            { productName: '垃圾袋', unit: '卷', qty: 30, memo: '加厚' },
+          ],
+        }),
         txt('dl-sign', 0, 84, w, 6, '收货人签收：＿＿＿＿＿＿　　日期：＿＿＿＿＿＿', { fontSize: 9 }),
       ]
       return fullPage(paper(148, 210, { top: 8, bottom: 8 }), header, body)
@@ -595,7 +621,16 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '商品', field: 'productName', width: 40, align: 'left', headerAlign: 'center' },
           { title: '数量', field: 'qty', width: 12, align: 'center', headerAlign: 'center' },
           { title: '小计', field: 'amount', width: 20, align: 'right', headerAlign: 'center' },
-        ], { borders: 'none', repeatHeader: false }),
+        ], {
+          borders: 'none',
+          repeatHeader: false,
+          data: [
+            { productName: '招牌牛肉面', qty: 2, amount: 36.0 },
+            { productName: '卤蛋', qty: 2, amount: 4.0 },
+            { productName: '冰红茶', qty: 2, amount: 6.0 },
+            { productName: '酸辣土豆丝', qty: 1, amount: 12.0 },
+          ],
+        }),
         txt('wm-total', 0, 58, w, 6, '合计：￥58.00', { fontSize: 12, fontWeight: 'bold', textAlign: 'right' }),
         txt('wm-fee', 0, 65, w, 4, '配送费：￥3.00　　包装费：￥1.00', { fontSize: 8.5, fill: '#555555' }),
         rule('wm-rule3', 0, 71, w, '#999999', 0.5),
@@ -687,7 +722,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '规格', field: 'spec', width: 26, align: 'left', headerAlign: 'center' },
           { title: '数量', field: 'qty', width: 14, align: 'right', headerAlign: 'center' },
           { title: '退货原因', field: 'reason', width: 58, align: 'left', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { productCode: 'PD-1001', productName: '无线鼠标', spec: '2.4G', qty: 2, reason: '按键失灵' },
+            { productCode: 'PD-1002', productName: '机械键盘', spec: '87 键', qty: 1, reason: '轴体异响' },
+            { productCode: 'PD-1003', productName: 'USB 集线器', spec: '4 口', qty: 3, reason: '接口松动' },
+            { productCode: 'PD-1004', productName: '六类网线', spec: '1.5m', qty: 5, reason: '水晶头损坏' },
+            { productCode: 'PD-1005', productName: '高清摄像头', spec: '1080P', qty: 1, reason: '画面模糊' },
+          ],
+        }),
         txt('rt-total', 0, 85, w, 7, '退货合计（大写）：人民币陆佰元整', { fontSize: 11, fontWeight: 'bold' }),
         txt('rt-memo', 0, 93, w, 6, '备注：退货须附原出库单与验收记录', { fontSize: 9, fill: '#555555' }),
         txt('rt-sign', 0, 103, w, 6, '客户确认：＿＿＿＿　　仓库验收：＿＿＿＿　　财务退款：＿＿＿＿', { fontSize: 9 }),
@@ -696,7 +739,7 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
         txt('rt-brand', 0, 3, 90, 6, '本单据由 OpenPrint 生成', { fontSize: 8, fill: '#888888' }),
         txt('rt-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
   {
@@ -727,7 +770,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '摘要', field: 'summary', width: 50, align: 'left', headerAlign: 'center' },
           { title: '票据张数', field: 'billCount', width: 18, align: 'right', headerAlign: 'center' },
           { title: '金额', field: 'amount', width: 32, align: 'right', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { feeType: '交通费', feeDate: '2026-07-12', summary: '深圳-广州 高铁', billCount: 2, amount: 180.0 },
+            { feeType: '住宿费', feeDate: '2026-07-12', summary: '如家酒店 2 晚', billCount: 2, amount: 436.0 },
+            { feeType: '业务招待费', feeDate: '2026-07-13', summary: '客户接待餐', billCount: 3, amount: 680.0 },
+            { feeType: '市内交通费', feeDate: '2026-07-14', summary: '打车费', billCount: 4, amount: 264.0 },
+            { feeType: '办公用品', feeDate: '2026-07-15', summary: '文具耗材', billCount: 1, amount: 300.0 },
+          ],
+        }),
         txt('exp-total', 0, 68, w, 7, '报销合计：￥1,860.00', { fontSize: 11, fontWeight: 'bold', textAlign: 'right' }),
         txt('exp-note', 0, 76, w, 6, '备注：附发票及行程单，发票张数 12 张', { fontSize: 9, fill: '#555555' }),
         txt('exp-sign', 0, 88, w, 6, '报销人：＿＿＿＿　　部门负责人：＿＿＿＿　　财务审核：＿＿＿＿', { fontSize: 9 }),
@@ -736,7 +787,7 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
       const footer: AnyControl[] = [
         txt('exp-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
   {
@@ -768,14 +819,22 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '单位', field: 'unit', width: 14, align: 'center', headerAlign: 'center' },
           { title: '数量', field: 'qty', width: 18, align: 'right', headerAlign: 'center' },
           { title: '备注', field: 'memo', width: 36, align: 'left', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { productCode: 'LM-2001', productName: '冷轧钢板', spec: '1.5mm', unit: '张', qty: 80, memo: '需剪板' },
+            { productCode: 'LM-2002', productName: '工业铝型材', spec: '4040', unit: '支', qty: 120, memo: '机架框架' },
+            { productCode: 'LM-2003', productName: '深沟球轴承', spec: '6204', unit: '个', qty: 40, memo: '' },
+            { productCode: 'LM-2004', productName: '同步带', spec: 'S5M', unit: '条', qty: 60, memo: '传动用' },
+            { productCode: 'LM-2005', productName: '标准紧固件', spec: 'M8', unit: '套', qty: 60, memo: '螺栓螺母' },
+          ],
+        }),
         txt('pl-total', 0, 73, w, 6, '合计领用：5 项 / 共 360 件', { fontSize: 10, fontWeight: 'bold' }),
         txt('pl-sign', 0, 84, w, 6, '领料人：＿＿＿＿　　发料人：＿＿＿＿　　车间主管：＿＿＿＿', { fontSize: 9 }),
       ]
       const footer: AnyControl[] = [
         txt('pl-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
   {
@@ -804,7 +863,15 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
           { title: '应收（元）', field: 'debit', width: 24, align: 'right', headerAlign: 'center' },
           { title: '已收（元）', field: 'credit', width: 22, align: 'right', headerAlign: 'center' },
           { title: '余额（元）', field: 'balance', width: 22, align: 'right', headerAlign: 'center' },
-        ]),
+        ], {
+          data: [
+            { billDate: '2026-06-03', billNo: 'XS-2026-0123', summary: '6 月货款', debit: 12800.0, credit: 0.0, balance: 12800.0 },
+            { billDate: '2026-06-18', billNo: 'XS-2026-0156', summary: '包装材料', debit: 9600.0, credit: 0.0, balance: 22400.0 },
+            { billDate: '2026-07-05', billNo: 'XS-2026-0201', summary: '7 月货款', debit: 8200.0, credit: 0.0, balance: 30600.0 },
+            { billDate: '2026-07-22', billNo: 'XS-2026-0245', summary: '配套配件', debit: 4800.0, credit: 0.0, balance: 35400.0 },
+            { billDate: '2026-07-29', billNo: 'XS-2026-0261', summary: '补货', debit: 3200.0, credit: 0.0, balance: 38600.0 },
+          ],
+        }),
         txt('st-begin', 0, 78, w, 6, '期初余额：￥0.00', { fontSize: 10 }),
         txt('st-end', 0, 85, w, 7, '期末应收余额：￥38,600.00', { fontSize: 11, fontWeight: 'bold' }),
         txt('st-note', 0, 93, w, 6, '请核对以上往来明细，如无异议请签章确认后回传。', { fontSize: 9, fill: '#555555' }),
@@ -813,7 +880,7 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
       const footer: AnyControl[] = [
         txt('st-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
       ]
-      return fullPage(paper(210, 297), header, body, footer)
+      return fullPage(paper(210, 297, { left: 12, right: 12 }), header, body, footer)
     },
   },
 

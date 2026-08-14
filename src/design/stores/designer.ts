@@ -24,7 +24,7 @@ import { assertTemplate } from '@/core/spec/validator'
 import { genId } from '@/utils/id'
 import { useHistoryStore } from './history'
 import { type ImportColumn } from '@/design/utils/data-import'
-import { seedSummaryTail } from '@/core/layout-engine/table-cells'
+import { seedSummaryTail, syncDataTableHeight } from '@/core/layout-engine/table-cells'
 
 /** 水印默认配置（开启后居中单个、45°、浅灰） */
 export const DEFAULT_WATERMARK: WatermarkConfig = {
@@ -83,6 +83,8 @@ export const useDesignerStore = defineStore('designer', () => {
   const backendMode = ref<'local' | 'cloud'>('local')
   /** 画布网格配置（运行时视图状态，辅助设计，不持久化） */
   const gridConfig = ref<GridConfig>({ ...DEFAULT_GRID })
+  /** 页边距锁定：默认开启，正文控件严格限制在边距内移动；关闭后可自由移动（边距仅作参考线） */
+  const marginLocked = ref(true)
 
   /**
    * 当前正在双击编辑的单元格（方案 A：HTML overlay 原生 contenteditable 编辑）。
@@ -92,6 +94,11 @@ export const useDesignerStore = defineStore('designer', () => {
   /** 画布变换版本号：Fabric 对象移动/缩放/旋转或视口变化时自增，驱动 overlay 重算定位 */
   const canvasTick = ref(0)
 
+  /** 手写签名弹窗开关：组件库点「签名」→ 打开弹出画板，确认后插入主画布 */
+  const signatureModalOpen = ref(false)
+  /** 签名从控件库拖入画布时的落点（mm）；点击插入时为 null，回落到默认位置 */
+  const pendingSignatureDrop = ref<{ leftMm: number; topMm: number } | null>(null)
+
   function openCellEditor(controlId: string, row: number, col: number): void {
     editingCell.value = { controlId, row, col }
   }
@@ -100,6 +107,16 @@ export const useDesignerStore = defineStore('designer', () => {
   }
   function bumpCanvasTick(): void {
     canvasTick.value++
+  }
+
+  /** 打开手写签名弹窗 */
+  function openSignaturePad(): void {
+    signatureModalOpen.value = true
+  }
+  /** 关闭手写签名弹窗 */
+  function closeSignaturePad(): void {
+    signatureModalOpen.value = false
+    pendingSignatureDrop.value = null
   }
 
   /* ------------------------------ computed ----------------------------- */
@@ -159,6 +176,8 @@ export const useDesignerStore = defineStore('designer', () => {
       onObjectModified: (newControl) => {
         const old = findControl(newControl.id)
         replaceControl(newControl)
+        // 页眉/页脚拖拽改高后，正文区起点平移 → 重放正文控件
+        if (newControl.type === 'zone') reflowBody()
         if (old) {
           const history = useHistoryStore()
           history.push({
@@ -215,7 +234,7 @@ export const useDesignerStore = defineStore('designer', () => {
   ): void {
     const base = createDefaultControl(type, at)
     if (!base) return
-    const control = init ? ({ ...base, ...init } as AnyControl) : base
+    let control = init ? ({ ...base, ...init } as AnyControl) : base
     // 圆形默认正圆：确保外接框为正方形（宽=高），避免默认矩形尺寸导致椭圆
     if (control.type === 'rect' && (control as RectControl).shape === 'circle') {
       const r = control as RectControl
@@ -224,6 +243,11 @@ export const useDesignerStore = defineStore('designer', () => {
         r.width = size
         r.height = size
       }
+    }
+    // 数据表：控件高度 = 行高之和（所见即所得），覆盖默认 60mm 或拖入时 init.height
+    if (control.type === 'table') {
+      const synced = syncDataTableHeight(control as TableControl)
+      if (synced !== control) control = synced as unknown as AnyControl
     }
     if (control.type === 'zone') {
       // 拖入页眉/页脚区域控件本身
@@ -387,9 +411,16 @@ export const useDesignerStore = defineStore('designer', () => {
     const current = findControl(id)
     if (!current) return
     const old = JSON.parse(JSON.stringify(current)) as AnyControl // 深拷贝旧状态
-    const merged = { ...current, ...patch, id: current.id, type: current.type } as AnyControl
+    let merged = { ...current, ...patch, id: current.id, type: current.type } as AnyControl
+    // 数据表：控件高度跟随行高之和，保证画布包围盒 = 渲染尺寸（所见即所得）
+    if (merged.type === 'table') {
+      const synced = syncDataTableHeight(merged as TableControl)
+      if (synced !== merged) merged = synced as unknown as AnyControl
+    }
     replaceControl(merged)
     designer.value?.updateControl(merged)
+    // 页眉/页脚高度变化 → 正文区起点平移，重放正文控件保持所见即所得
+    if (merged.type === 'zone') reflowBody()
     const history = useHistoryStore()
     history.push({
       undo: () => {
@@ -414,9 +445,22 @@ export const useDesignerStore = defineStore('designer', () => {
   function updateControlSilent(id: string, patch: Partial<AnyControl>): void {
     const current = findControl(id)
     if (!current) return
-    const merged = { ...current, ...patch, id: current.id, type: current.type } as AnyControl
+    let merged = { ...current, ...patch, id: current.id, type: current.type } as AnyControl
+    // 数据表：控件高度跟随行高之和，保证画布包围盒 = 渲染尺寸（所见即所得）
+    if (merged.type === 'table') {
+      const synced = syncDataTableHeight(merged as TableControl)
+      if (synced !== merged) merged = synced as unknown as AnyControl
+    }
     replaceControl(merged)
     designer.value?.updateControl(merged)
+  }
+
+  /**
+   * 页眉/页脚高度或页边距变化后，按模型重放正文控件位置。
+   * 正文控件模型 top 不变（相对正文区），仅画布绝对 y 随正文区起点平移，保持与渲染端 WYSIWYG。
+   */
+  function reflowBody(): void {
+    for (const c of controls.value) designer.value?.updateControl(c)
   }
 
   function removeControl(id: string): void {
@@ -522,6 +566,12 @@ export const useDesignerStore = defineStore('designer', () => {
       d.setGridSize(next.sizeMm)
       d.setGridColor(next.color)
     }
+  }
+
+  /** 设置页边距锁定：锁定=正文控件限制在边距内移动；关闭=可自由移动（边距仅参考线） */
+  function setMarginLocked(locked: boolean): void {
+    marginLocked.value = locked
+    designer.value?.setMarginLocked(locked)
   }
 
   /**
@@ -677,18 +727,28 @@ export const useDesignerStore = defineStore('designer', () => {
         d.addControl(zone, { select: false })
       }
     }
+    // 载入时归一化：数据表控件高度 = 行高之和（画布包围盒 = 渲染尺寸，所见即所得）；
+    // 布局网格高度即真理，syncDataTableHeight 会原样返回，不影响。
+    const loadNormalize = (c: AnyControl): AnyControl => {
+      const base = { ...c, id: c.id || genId() }
+      if (base.type === 'table') {
+        return syncDataTableHeight(base as TableControl) as unknown as AnyControl
+      }
+      return base
+    }
+
     // 再装 body 与 zone 子控件
     for (const section of doc.sections) {
       if (section.type === 'body') {
         for (const c of section.components) {
-          const control = { ...c, id: c.id || genId() }
+          const control = loadNormalize(c)
           controls.value.push(control)
           d.addControl(control, { select: false })
         }
       } else {
         const host = zones.value.find((z) => z.zone === section.type)
         for (const c of section.components) {
-          const control = { ...c, id: c.id || genId() }
+          const control = loadNormalize(c)
           host?.children.push(control)
           d.addControl(control, { select: false, zoneHostId: host?.id })
         }
@@ -753,7 +813,13 @@ export const useDesignerStore = defineStore('designer', () => {
     openCellEditor,
     closeCellEditor,
     bumpCanvasTick,
+  signatureModalOpen,
+  pendingSignatureDrop,
+  openSignaturePad,
+  closeSignaturePad,
     setGrid,
+    marginLocked,
+    setMarginLocked,
     attachCanvas,
     detachCanvas,
     addControlOfType,
@@ -761,6 +827,7 @@ export const useDesignerStore = defineStore('designer', () => {
     addZone,
     updateControl,
     updateControlSilent,
+    reflowBody,
     removeControl,
     selectControl,
     buildTemplate,
@@ -880,6 +947,27 @@ function createDefaultControl(
           { name: '退货', data: [20, 35, 15, 10] },
         ],
         options: { showAxis: true, showGrid: true, showLegend: true, valueLabel: false },
+      }
+    case 'math':
+      return {
+        ...base,
+        type,
+        width: 80,
+        height: 25,
+        latex: 'c = \\pm\\sqrt{a^2 + b^2}',
+        displayMode: true,
+        fontSize: 16,
+        color: '#000000',
+      }
+    case 'signature':
+      return {
+        ...base,
+        type,
+        width: 60,
+        height: 30,
+        src: '',
+        penWidth: 1,
+        color: '#000000',
       }
   }
 }

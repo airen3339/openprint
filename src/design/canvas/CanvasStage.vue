@@ -13,6 +13,7 @@ import { loadBuiltinFonts } from '@/core/fonts/loader'
 import RulerOverlay from './rulers/RulerOverlay.vue'
 import TableViewLayer from './TableViewLayer.vue'
 import ChartViewLayer from './ChartViewLayer.vue'
+import MathViewLayer from './MathViewLayer.vue'
 import { RULER_THICK } from '@/utils/constants'
 
 const store = useDesignerStore()
@@ -101,6 +102,8 @@ onBeforeUnmount(() => {
       <TableViewLayer v-if="canvasReady" />
       <!-- 图表 SVG overlay（方案 A）：同上，原生 SVG 矢量覆盖 -->
       <ChartViewLayer v-if="canvasReady" />
+      <!-- 公式 KaTeX HTML overlay（方案 A）：同上，KaTeX 矢量字体覆盖 -->
+      <MathViewLayer v-if="canvasReady" />
     </div>
 
     <!-- 标尺覆盖层（只看不拦截事件） -->

@@ -111,6 +111,18 @@ function asRecord(v: unknown): Record<string, unknown> | null {
  * mergeSheets（§9.2.1a 多单合并）：dataSource 解析出的若干数组会被**扁平拼接**成一条连续行流，
  * 使多张单据一次连续打印，而不是各自起新页。
  */
+function embeddedRows(control: TableControl): Array<Record<string, unknown>> {
+  if (Array.isArray(control.data) && control.data.length > 0) {
+    const out: Array<Record<string, unknown>> = []
+    for (const item of control.data) {
+      const rec = asRecord(item)
+      if (rec) out.push(rec)
+    }
+    return out
+  }
+  return []
+}
+
 function resolveRows(
   control: TableControl,
   ctx: EvalContext,
@@ -119,7 +131,10 @@ function resolveRows(
   const path = control.dataSource?.trim()
   if (path) {
     const raw = resolveBinding(path, ctx)
+    const embedded = embeddedRows(control)
     if (raw === null || raw === undefined) {
+      // dataSource 缺失：有内嵌 data 则回退（模板示例/导入场景），否则告警
+      if (embedded.length) return embedded
       warnings.push({
         code: 'DATASOURCE_EMPTY',
         message: `表格数据源 "${path}" 在数据中不存在`,
@@ -129,6 +144,7 @@ function resolveRows(
     }
 
     if (!Array.isArray(raw)) {
+      if (embedded.length) return embedded
       warnings.push({
         code: 'DATASOURCE_NOT_ARRAY',
         message: `表格数据源 "${path}" 不是数组（实际为 ${typeof raw}）`,
@@ -155,6 +171,8 @@ function resolveRows(
     }
 
     if (out.length === 0) {
+      // dataSource 为空数组：有内嵌 data 则回退
+      if (embedded.length) return embedded
       warnings.push({
         code: 'DATASOURCE_EMPTY',
         message: `表格数据源 "${path}" 为空数组`,
@@ -165,16 +183,7 @@ function resolveRows(
   }
 
   // 表格自带内嵌数据（导入数据场景）：与 dataSource 字段解耦，直接作为数据行
-  if (Array.isArray(control.data) && control.data.length > 0) {
-    const out: Array<Record<string, unknown>> = []
-    for (const item of control.data) {
-      const rec = asRecord(item)
-      if (rec) out.push(rec)
-    }
-    return out
-  }
-
-  return []
+  return embeddedRows(control)
 }
 
 /* ------------------------------- 列宽归一化 ------------------------------ */
@@ -598,20 +607,20 @@ export function buildTableModel({
         const field = stripItems(col?.field)
         const numeric = columnAggregatable(col, dataRows[0])
         if (numeric && field) {
-          return applyCellStyle(
-            {
-              text: '',
-              align: col?.align ?? 'right',
-              bold: true,
-              isAgg: true,
-              tokenKind: tk,
-              aggField: field,
-            },
-            control,
-            col,
-            cell,
-            'static',
-          )
+        return applyCellStyle(
+          {
+            text: '',
+            align: col?.align ?? 'center',
+            bold: true,
+            isAgg: true,
+            tokenKind: tk,
+            aggField: field,
+          },
+          control,
+          col,
+          cell,
+          'static',
+        )
         }
         // 非数值列：聚合 token 不参与计算，留空
         return applyCellStyle(
@@ -807,9 +816,19 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
         used -= removed.height
         i--
       }
-      if (headerH + used + pageFooterH + lastFooterH <= req.avail || picked.length === 0) {
+      // while 弹出行后，可能出现「footer 放下了但还有行没放完」的情况：
+      // 这种 slice 的 i 已 < rows.length，实质是"被迫让行给真末页"，必须当作非末页
+      // 只挂本页合计，绝不挂总计/大写（否则非末页出现总计 → 用户看到的"两页都有总计"bug）
+      if (picked.length === 0) {
+        // 极端：所有数据行弹出（avail 极小，连一行都放不下），表尾不挂、
+        // 标记非末页，让下一页 sliceTable 重新放（否则会出现"非末页带总计/大写"）
+        footerRows = []
+        isLast = false
+      } else if (i >= model.rows.length) {
+        // 没让行（footer 装得下）→ 真末页，挂总计/大写
         footerRows = resolveFooterRows(pickedDataRows, true)
       } else {
+        // 让了行给下一页 → 非末页，只挂本页合计
         isLast = false
         footerRows = resolveFooterRows(pickedDataRows, false)
       }

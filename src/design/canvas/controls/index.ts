@@ -14,6 +14,8 @@ import { PrintTable } from './PrintTable'
 import { PrintZone } from './PrintZone'
 import { PrintRichText } from './PrintRichText'
 import { PrintChart } from './PrintChart'
+import { PrintMath } from './PrintMath'
+import { PrintSignature } from './PrintSignature'
 import type { IPrintObject } from './PrintObject'
 
 export {
@@ -28,12 +30,17 @@ export {
   PrintZone,
   PrintRichText,
   PrintChart,
+  PrintMath,
+  PrintSignature,
 }
 export { isPrintObject, type IPrintObject } from './PrintObject'
 
 export interface PageSizeMm {
   widthMm: number
   heightMm: number
+  /** 左右边距（mm，页眉/页脚色带贴内容宽用） */
+  marginLeftMm?: number
+  marginRightMm?: number
 }
 
 /** 由协议模型创建 Fabric 控件对象 */
@@ -61,8 +68,15 @@ export function createFabricControl(
       return new PrintTable(control)
     case 'chart':
       return new PrintChart(control)
+    case 'math':
+      return new PrintMath(control)
+    case 'signature': {
+      const obj = new PrintSignature(control)
+      void obj.loadImage()
+      return obj
+    }
     case 'zone':
-      return new PrintZone(control, page.widthMm, page.heightMm)
+      return new PrintZone(control, page.widthMm, page.heightMm, page.marginLeftMm, page.marginRightMm)
     case 'richtext':
       return new PrintRichText(control)
   }
@@ -80,4 +94,6 @@ export const CONTROL_TYPE_LABEL: Record<string, string> = {
   richtext: '富文本',
   zone: '区域',
   chart: '图表',
+  math: '公式',
+  signature: '签名',
 }

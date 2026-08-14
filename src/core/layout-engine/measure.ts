@@ -83,7 +83,7 @@ class DomMeasurer implements TextMeasurer {
       top: '0',
       visibility: 'hidden',
       pointerEvents: 'none',
-      contain: 'layout size style',
+      contain: 'layout style',
       padding: '0',
       margin: '0',
       border: '0',

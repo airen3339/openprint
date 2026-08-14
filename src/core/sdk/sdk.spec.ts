@@ -25,7 +25,7 @@ describe('sdk.render —— 对外渲染契约 §6.4', () => {
   const measurer = createCjkMeasurer()
 
   it('render 返回 html / pages / result / warnings，且多页', async () => {
-    const res = await render({ template: createDemoTemplate(), data: makeData(30), layout: { measurer } })
+    const res = await render({ template: createDemoTemplate(), data: makeData(40), layout: { measurer } })
     expect(typeof res.html).toBe('string')
     expect(res.html.length).toBeGreaterThan(0)
     expect(res.pages).toBeGreaterThanOrEqual(2)

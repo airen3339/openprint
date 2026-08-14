@@ -460,13 +460,25 @@ const editingRowKind = computed(() => {
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  overflow: hidden;
+  /* 不裁剪表格内容：行高可能被内容（如窄列里的"本页合计/大写金额"标签换行）撑得比
+     控制框高度高，裁剪会把末尾行藏掉（看不见、拉大控制框才出现）。溢出显示保证
+     画布所见 = 渲染所得；非编辑态 pointer-events:none，不挡 Fabric 交互。 */
+  overflow: visible;
 }
 
 .op-table-overlay__item.is-editing {
   pointer-events: auto;
   outline: 1px solid var(--brand-primary, #1677ff);
   outline-offset: 1px;
+  /* 编辑态不裁剪：用户输入多行文本时允许撑出包围盒完整显示 */
+  overflow: visible;
+}
+
+/* 编辑态放开占位符的单行截断（nowrap/ellipsis 是设计态展示用），允许换行输入 */
+.op-table-overlay__item.is-editing :deep(td) {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
 }
 
 /* v-html 内容不受 scoped 影响，需用 :deep 穿透 */

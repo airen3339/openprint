@@ -11,6 +11,7 @@ import {
   addTableColumn,
   buildDesignGrid,
   computeSpanLayout,
+  designRowHeights,
   designRowInfo,
   ensureCells,
   moveTableColumn,
@@ -24,6 +25,8 @@ import {
   setCellRowSpan,
   setCellSpan,
   setGridRows,
+  seedSummaryTail,
+  syncDataTableHeight,
 } from './table-cells'
 
 function baseTable(over: Partial<TableControl> = {}): TableControl {
@@ -331,6 +334,69 @@ describe('网格结构变更（#100）', () => {
     expect(next.columns[2]!.title).toBe('序号')
     expect(next.cells![0]![2]!.text).toBe('序号') // 单元格同列位置搬动
     expect(next.cells![0]![0]!.text).toBe('名称')
+  })
+})
+
+describe('designRowHeights —— 画布行高与渲染一致（所见即所得）', () => {
+  it('数据表 auto：每行 = 单行文本估算 ≈ 6.69mm（9pt×1.35 + 上下 padding 各 1.2mm）', () => {
+    const rows = designRowHeights(baseTable({ dataSource: 'items', staticRows: 2, height: 999 }))
+    const grid = buildDesignGrid(baseTable({ dataSource: 'items', staticRows: 2 }))
+    expect(rows.length).toBe(grid.rowCount) // 表头 + 数据样例 + 2 静态
+    const expected = (9 * (25.4 / 72)) * 1.35 + 2 * 1.2
+    for (const h of rows) {
+      expect(h).toBeCloseTo(expected, 3)
+    }
+    expect(expected).toBeCloseTo(6.686, 2) // 远小于旧算法的 12mm，与渲染端单行一致
+  })
+
+  it('数据表 fixed：每行 = 指定行高', () => {
+    const rows = designRowHeights(
+      baseTable({ dataSource: 'items', staticRows: 1, options: { rowHeightMode: 'fixed', rowHeight: 10 } }),
+    )
+    expect(rows.every((h) => h === 10)).toBe(true)
+  })
+
+  it('数据表 fixed：缺省回退 8mm，且不低于 6mm 下限（与渲染端 MIN_ROW_HEIGHT 一致）', () => {
+    const rows = designRowHeights(baseTable({ dataSource: 'items', options: { rowHeightMode: 'fixed' } }))
+    expect(rows.every((h) => h === 8)).toBe(true)
+  })
+
+  it('布局网格：各行高度之和恰等于控件高度（画布 = 打印）', () => {
+    const t = baseTable({ designRows: 3, height: 50 })
+    const rows = designRowHeights(t, t.height)
+    const sum = rows.reduce((s, h) => s + h, 0)
+    expect(sum).toBeCloseTo(50, 6)
+  })
+
+  it('syncDataTableHeight：数据表控件高度 = 所有行高之和', () => {
+    const t = baseTable({ dataSource: 'items', staticRows: 2, height: 999 })
+    const synced = syncDataTableHeight(t)
+    const rows = designRowHeights(t)
+    expect(synced.height).toBeCloseTo(rows.reduce((s, h) => s + h, 0), 6)
+    expect(synced.height).toBeLessThan(50) // 不再虚高
+  })
+
+  it('syncDataTableHeight：行数变化后高度跟随（增静态尾行）', () => {
+    const before = syncDataTableHeight(baseTable({ dataSource: 'items', staticRows: 0, height: 999 }))
+    const after = syncDataTableHeight(
+      setGridRows(ensureCells(baseTable({ dataSource: 'items', staticRows: 0 })), { staticRows: 3 }),
+    )
+    expect(after.height).toBeGreaterThan(before.height)
+  })
+})
+
+describe('seedSummaryTail —— 默认尾行居中', () => {
+  it('植入的本页合计 / 总计 / 大写金额 尾行（有文本的单元格）全部居中对齐', () => {
+    const t = baseTable({ dataSource: 'items', staticRows: 0 })
+    const seeded = seedSummaryTail(t, { numericColumns: [1, 2], moneyColumn: 2, capital: true })
+    const grid = buildDesignGrid(seeded)
+    const tail = grid.cells.slice(grid.headerRows + 1) // 跳过表头 + 数据样例行
+    expect(tail.length).toBe(3) // 本页合计 + 总计 + 大写金额
+    for (const row of tail) {
+      for (const cell of row) {
+        if (cell.text) expect(cell.style?.align).toBe('center')
+      }
+    }
   })
 })
 

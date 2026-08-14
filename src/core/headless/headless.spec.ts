@@ -20,7 +20,7 @@ describe('createHeadless —— 无头静默模式', () => {
 
   it('render 复用 sdk 产出多页 HTML（零 UI 残留）', async () => {
     const hl = createHeadless({ fonts: [] })
-    const res = await hl.render({ template: createDemoTemplate(), data: makeData(30), layout: { measurer } })
+    const res = await hl.render({ template: createDemoTemplate(), data: makeData(40), layout: { measurer } })
     expect(res.pages).toBeGreaterThanOrEqual(2)
     hl.dispose()
   })

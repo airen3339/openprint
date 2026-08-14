@@ -156,6 +156,8 @@ export type WarningCode =
   | 'IMAGE_UNRESOLVED' // 图片无法解析
   | 'BARCODE_FAILED' // 条码/二维码生成失败
   | 'CHART_FAILED' // 图表 SVG 生成失败
+  | 'MATH_FAILED' // 公式渲染失败
+  | 'SIGNATURE_EMPTY' // 签名为空（未手写）
   | 'PAGE_LIMIT_REACHED' // 触发最大页数保护
   | 'ROW_TOO_TALL' // 单行高于整页可用高度
 

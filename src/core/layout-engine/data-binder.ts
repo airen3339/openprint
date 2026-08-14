@@ -16,13 +16,16 @@ import type {
   BarcodeControl,
   ChartControl,
   ImageControl,
+  MathControl,
   QrcodeControl,
   RichTextControl,
+  SignatureControl,
   TextControl,
 } from '@/types/control'
 import { interpolate, evaluateVisible, resolveBinding, stringifyValue, formatCellValue } from './expression'
 import type { EvalContext, ResolvedContent, RenderWarning } from './types'
 import { renderChartControl } from '@/core/chartkit'
+import { renderMathControl } from '@/core/mathkit'
 
 /* ------------------------------ 可见性判定 ------------------------------ */
 
@@ -239,6 +242,35 @@ export async function resolveControlContent(
         })
         return { content: { kind: 'placeholder', label: '图表' }, warnings }
       }
+    }
+
+    case 'math': {
+      // LaTeX 公式（KaTeX）：HTML + web fonts 渲染，与富文本同理走 HTML 链路。
+      // 设计期由 MathViewLayer overlay 渲染；导出走与正文相同的栅格化路径（高清不糊）。
+      try {
+        return { content: { kind: 'html', html: renderMathControl(control as MathControl) }, warnings }
+      } catch (e) {
+        warnings.push({
+          code: 'MATH_FAILED',
+          message: `公式生成失败：${e instanceof Error ? e.message : String(e)}`,
+          controlId: control.id,
+        })
+        return { content: { kind: 'placeholder', label: '公式' }, warnings }
+      }
+    }
+
+    case 'signature': {
+      // 手写签名：位图（PNG data-URI），复用图片渲染/导出链路（栅格化，清晰可靠）。
+      const src = (control as SignatureControl).src ?? ''
+      if (!src) {
+        warnings.push({
+          code: 'SIGNATURE_EMPTY',
+          message: '签名为空（请重新签名）',
+          controlId: control.id,
+        })
+        return { content: { kind: 'placeholder', label: '签名' }, warnings }
+      }
+      return { content: { kind: 'image', src }, warnings }
     }
 
     default:

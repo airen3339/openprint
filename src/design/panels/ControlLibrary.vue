@@ -60,6 +60,8 @@ const categories: Category[] = [
     name: '高级组件',
     items: [
       { type: 'richtext', label: '富文本', icon: 'i-carbon-text-annotation-toggle' },
+      { type: 'math', label: '公式', icon: 'i-carbon-function-math' },
+      { type: 'signature', label: '签名', icon: 'i-carbon-pen' },
     ],
   },
   {
@@ -90,6 +92,7 @@ const filtered = computed(() => {
 
 function onDragStart(e: DragEvent, item: ControlItem): void {
   if (item.disabled) return
+  // 签名拖入画布时走弹窗手写（见 useDragAdd 的 onDrop 特例），这里正常发起拖拽即可
   // 圆形/页码复用已有类型：圆形=rect+shape 补丁；页码=text+{{page}} 内容
   let dragType: ControlType
   if (item.type === 'zone-header' || item.type === 'zone-footer') {
@@ -125,6 +128,12 @@ function onClick(item: ControlItem): void {
   } else if (item.type === 'chart') {
     // 图表：点击插入到内容区默认位置（条形/折线/饼图由 init.kind 决定）
     store.addControlOfType('chart', { leftMm: 60, topMm: 60 }, item.init)
+  } else if (item.type === 'math') {
+    // 公式：点击插入到内容区默认位置
+    store.addControlOfType('math', { leftMm: 60, topMm: 60 })
+  } else if (item.type === 'signature') {
+    // 签名：打开弹出式手写画板（WPS 式），确认后插入主画布
+    store.openSignaturePad()
   }
 }
 </script>

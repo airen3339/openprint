@@ -333,14 +333,17 @@ function renderWatermark(wm: WatermarkConfig): string {
 
 export function renderPage(page: LayoutPage, watermark?: WatermarkConfig | null): string {
   const wm = watermark ? renderWatermark(watermark) : ''
+  // Word 式布局：页眉/页脚是 .op-page 的直接子元素（在上下边距内），
+  // 正文独占 .op-content（在上下边距之间）。
   return (
     `<div class="op-page-wrap"><div class="op-page" data-page="${page.pageNo}">` +
     wm +
-    `<div class="op-content">` +
     renderSection('op-header', page.header) +
+    `<div class="op-content">` +
     renderSection('op-body', page.body) +
+    `</div>` +
     renderSection('op-footer', page.footer) +
-    `</div></div></div>`
+    `</div></div>`
   )
 }
 

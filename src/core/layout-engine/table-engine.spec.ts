@@ -5,7 +5,7 @@ import {
   normalizeColumnWidths,
   sliceTable,
 } from '@/core/layout-engine/table-engine'
-import { isDataTable } from '@/core/layout-engine/table-cells'
+import { isDataTable, seedSummaryTail } from '@/core/layout-engine/table-cells'
 import type { TableColumn, TableControl } from '@/types/control'
 import type { EvalContext } from './types'
 import { createCjkMeasurer } from '@/core/__tests__/cjk-measurer'
@@ -493,5 +493,75 @@ describe('buildTableModel —— 内嵌 data（与 dataSource 字段解耦）', 
       data: [],
     } as unknown as TableControl
     expect(isDataTable(empty)).toBe(false)
+  })
+})
+
+describe('sliceTable —— 分页聚合（本页合计 / 总计 / 大写金额）', () => {
+  const measurer = createCjkMeasurer()
+  const amountCol = 1
+
+  function mkSeededTable(): Model {
+    const control = {
+      id: 't',
+      type: 'table',
+      left: 0,
+      top: 0,
+      width: 180,
+      height: 50,
+      dataSource: 'items',
+      columns: [
+        { title: '名称', field: 'items[].name', width: 120, align: 'left', headerAlign: 'center' },
+        { title: '金额', field: 'items[].amount', width: 60, align: 'right', headerAlign: 'center' },
+      ],
+      // 10 行内嵌数据，金额 10,20,...,100（全表合计 550）
+      data: Array.from({ length: 10 }, (_, i) => ({ name: 'x' + (i + 1), amount: (i + 1) * 10 })),
+      options: { repeatHeader: true, repeatFooter: false, pageRows: 2 } as TableControl['options'],
+    } as unknown as TableControl
+    const seeded = seedSummaryTail(control, { numericColumns: [amountCol], moneyColumn: amountCol, capital: true })
+    return buildTableModel({ control: seeded, ctx: {} as EvalContext, measurer, widthMm: 180, heightMm: 50 })
+  }
+
+  function sliceAll(model: Model): ReturnType<typeof sliceTable>[] {
+    const out: ReturnType<typeof sliceTable>[] = []
+    let start = 0
+    for (let p = 0; p < 20; p++) {
+      const s = sliceTable(model, { avail: 1000, start })
+      out.push(s)
+      if (s.isLast) break
+      start = s.nextStart
+    }
+    return out
+  }
+
+  const num = (t: string | undefined): number => Number((t ?? '').replace(/,/g, ''))
+
+  it('每页本页合计 = 本页数据行之和；非末页不出现总计 / 大写金额', () => {
+    const slices = sliceAll(mkSeededTable())
+    expect(slices.length).toBe(5) // 10 行 / 每页 2 行
+    slices.forEach((s, p) => {
+      const subtotal = s.footerRows.find((r) => r.kind === 'subtotal')
+      expect(subtotal, `第 ${p + 1} 页应有本页合计`).toBeTruthy()
+      const pageSum = num(subtotal!.cells[amountCol]!.text)
+      const expected = (p * 2 + 1) * 10 + (p * 2 + 2) * 10
+      expect(pageSum).toBe(expected)
+      if (p < slices.length - 1) {
+        expect(s.footerRows.some((r) => r.footerKind === 'grandTotal')).toBe(false)
+        expect(s.footerRows.some((r) => r.footerKind === 'capital')).toBe(false)
+      }
+    })
+  })
+
+  it('末页出现总计（全表之和=550）与大写金额（伍佰伍拾元整）；末页本页合计=末页本页之和', () => {
+    const slices = sliceAll(mkSeededTable())
+    const last = slices[slices.length - 1]!
+    const total = last.footerRows.find((r) => r.footerKind === 'grandTotal')
+    const cap = last.footerRows.find((r) => r.footerKind === 'capital')
+    expect(total, '末页应有总计').toBeTruthy()
+    expect(cap, '末页应有大写金额').toBeTruthy()
+    expect(num(total!.cells[amountCol]!.text)).toBe(550) // 10+20+...+100
+    expect(cap!.cells[amountCol]!.text).toBe('伍佰伍拾元整')
+    // 末页本页合计 = 末页本页数据（第 9、10 行 90+100）
+    const subtotal = last.footerRows.find((r) => r.kind === 'subtotal')
+    expect(num(subtotal!.cells[amountCol]!.text)).toBe(190)
   })
 })

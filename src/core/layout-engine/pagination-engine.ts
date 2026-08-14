@@ -250,9 +250,23 @@ function paginateFlowTable(
     }
     if (!slice) {
       slice = sliceTable(model, { avail: availFull, start })
-      // 用满预算才放完 → 下方控件挤不下，让它们独占下一页
+      // 用满预算才放完 → 下方控件挤不下：削减"最后一行 + 仅末页表尾（总计/大写）"的空间
+      // 重切，强制 sliceTable 让出最后一行并只挂本页合计，使表格在下一页真正收尾挂总计。
+      // （sliceTable 的 isLast 分支保证：让行后 i < rows.length 时只挂本页合计、不挂总计/大写。）
       if (slice.isLast && reserveBelow > 0 && availFull - slice.height < reserveBelow) {
-        slice = { ...slice, isLast: false }
+        const lastData = [...slice.rows].reverse().find((r) => r.kind === 'data')
+        const lastRowH = lastData?.height ?? 0
+        const lastOnlyFooterH = slice.footerRows
+          .filter((f) => f.footerKind === 'grandTotal' || f.footerKind === 'capital')
+          .reduce((s, f) => s + f.height, 0)
+        // 削减"最后一行 + 仅末页表尾" + 足够 buffer，确保 sliceTable 走非 isLast 分支
+        // 只放本页合计（buffer 必须 > 临界，否则 sliceTable 仍能放下 2 行进入 isLast 分支
+        // 弹光所有行变 picked=0 走极端分支，依然不带总计/大写但本片无数据页坏掉）。
+        const targetAvail = Math.max(
+          1,
+          availFull - lastRowH - lastOnlyFooterH - 2,
+        )
+        slice = sliceTable(model, { avail: targetAvail, start })
       }
     }
 
@@ -490,9 +504,11 @@ async function layoutStaticOnly(
   maxPages: number,
   warnings: RenderWarning[],
 ): Promise<PlacedNode[][]> {
-  const bodyH = Math.max(1, metrics.bodyHeight)
+  const bodyH = Math.max(1, metrics.pageHeight - metrics.margin.top)
 
-  // 控件按 top 落在第几个 bodyHeight 区间就进第几页
+  // 控件按 top 落在第几个 bodyHeight 区间就进第几页。
+  // 分页步长 = 页高 - 上边距（含下边距区）：正文控件可自由落进下边距（边距只作设计辅助），
+  // top ∈ [0, 页高-上边距) 均属当前页，避免拖到底部贴边距时被误判到下一页造成底部空白。
   let maxPageIndex = 0
   const buckets = new Map<number, AnyControl[]>()
   for (const c of components) {

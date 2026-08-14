@@ -13,6 +13,7 @@ import TopToolbar from '@/design/toolbar/TopToolbar.vue'
 import LeftPanel from '@/design/panels/LeftPanel.vue'
 import RightPanel from '@/design/panels/RightPanel.vue'
 import CanvasStage from '@/design/canvas/CanvasStage.vue'
+import SignaturePadModal from '@/design/panels/SignaturePadModal.vue'
 import { useUiStore } from '@/design/stores/ui'
 import { darkThemeOverrides, lightThemeOverrides } from '@/theme/naive-theme'
 
@@ -50,6 +51,9 @@ const themeOverrides = computed(() => (isDark.value ? darkThemeOverrides : light
               <RightPanel />
             </aside>
           </div>
+
+          <!-- 弹出式手写签名画板（WPS 式） -->
+          <SignaturePadModal />
         </div>
       </NDialogProvider>
     </NMessageProvider>

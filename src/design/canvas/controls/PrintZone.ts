@@ -1,9 +1,12 @@
 /**
  * PrintZone —— 页眉/页脚区域控件（《设计方案》§5.14）
  *
- * 画布表现：一条横向锁定色带（页顶或页底），
+ * Word 式布局：页眉/页脚位于**上下边距内**（贴页顶/页底边缘），正文独占内容区。
+ * 与渲染端一致：页眉/页脚 section 是内容宽（左右边距内），Y 方向贴页顶/页底。
+ * 画布表现：一条横向锁定色带：
+ * - header 色带：top=0（页顶边距内），高度可改（仅底部中点手柄）
+ * - footer 色带：top=页高-高（页底边距内），高度可改（仅顶部中点手柄）
  * - 自身不可移动/旋转（位置由页顶/页底固定）
- * - 仅保留内边缘一个 resize 手柄改高度（header=下边缘 mb，footer=上边缘 mt）
  * - 单例：每页最多一个 header + 一个 footer（由 CanvasDesigner.addZone 保证）
  * - 序列化目标是 sections[header/footer]，不进 body.components
  */
@@ -18,12 +21,22 @@ export class PrintZone extends Rect implements IPrintObject {
   zone: 'header' | 'footer'
   repeat = true
 
-  constructor(control: ZoneControl, pageWidthMm: number, pageHeightMm: number) {
+  private readonly pageHeightMm: number
+  private readonly marginLeftMm: number
+  private readonly marginRightMm: number
+
+  constructor(
+    control: ZoneControl,
+    pageWidthMm: number,
+    pageHeightMm: number,
+    marginLeftMm = 0,
+    marginRightMm = 0,
+  ) {
     const h = mm(control.zoneHeight)
     super({
-      left: 0,
+      left: mm(marginLeftMm),
       top: control.zone === 'header' ? 0 : mm(pageHeightMm) - h,
-      width: mm(pageWidthMm),
+      width: mm(pageWidthMm) - mm(marginLeftMm) - mm(marginRightMm),
       height: h,
       fill: control.zone === 'header' ? 'rgba(22,119,255,0.05)' : 'rgba(22,119,255,0.04)',
       stroke: 'rgba(22,119,255,0.45)',
@@ -40,6 +53,9 @@ export class PrintZone extends Rect implements IPrintObject {
     this.controlId = control.id
     this.zone = control.zone
     this.repeat = control.repeat ?? true
+    this.pageHeightMm = pageHeightMm
+    this.marginLeftMm = marginLeftMm
+    this.marginRightMm = marginRightMm
     this.restrictControls()
   }
 
@@ -57,12 +73,12 @@ export class PrintZone extends Rect implements IPrintObject {
     this.controls = controls
   }
 
-  /** 页面尺寸变化时由 CanvasDesigner 调用，重贴页顶/页底 */
+  /** 页面尺寸变化时由 CanvasDesigner 调用，重贴页顶/页底（保持左右边距） */
   relayout(pageWidthMm: number, pageHeightMm: number): void {
     const h = this.height * this.scaleY
     this.set({
-      left: 0,
-      width: mm(pageWidthMm),
+      left: mm(this.marginLeftMm),
+      width: mm(pageWidthMm) - mm(this.marginLeftMm) - mm(this.marginRightMm),
       scaleX: 1,
       scaleY: 1,
       height: h,
@@ -94,11 +110,11 @@ export class PrintZone extends Rect implements IPrintObject {
   applyControlProps(control: ZoneControl): void {
     this.repeat = control.repeat ?? true
     if (control.zoneHeight && control.zoneHeight !== this.zoneHeightMm) {
-      const pageH = this.canvas ? px(this.canvas.getHeight()) : 0
+      const h = mm(control.zoneHeight)
       this.set({
         scaleY: 1,
-        height: mm(control.zoneHeight),
-        top: this.zone === 'header' ? 0 : mm(pageH) - mm(control.zoneHeight),
+        height: h,
+        top: this.zone === 'header' ? 0 : mm(this.pageHeightMm) - h,
       })
       this.setCoords()
     }

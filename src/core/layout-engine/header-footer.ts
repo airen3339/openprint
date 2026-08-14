@@ -44,7 +44,8 @@ export function computePageMetrics(
 
   const headerHeight = headerSection ? toMm(headerSection.height ?? 0, unit) : 0
   const footerHeight = footerSection ? toMm(footerSection.height ?? 0, unit) : 0
-  const bodyHeight = Math.max(0, contentHeight - headerHeight - footerHeight)
+  // Word 式布局：页眉/页脚位于上下边距内；正文区 = contentHeight，不扣除页眉/页脚
+  const bodyHeight = contentHeight
 
   return {
     pageWidth,
@@ -54,6 +55,7 @@ export function computePageMetrics(
     contentHeight,
     headerHeight,
     footerHeight,
+    // 保留 bodyHeight 字段名，其语义现在等同于 contentHeight（与渲染 .op-body 高度一致）
     bodyHeight,
   }
 }

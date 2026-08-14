@@ -54,7 +54,8 @@ export function useDragAdd(stageRef: Ref<HTMLElement | null>): void {
 
     // 检测是否拖入页眉/页脚区域
     let zoneHostId: string | undefined
-    let origin = { x: d.marginMm.left, y: d.marginMm.top }
+    // 默认正文区原点 = 内容区左上角 + 页眉高（与渲染端 .op_body 起算点一致）
+    let origin = { x: d.contentOriginPx.x / MM_TO_PX, y: d.contentOriginPx.y / MM_TO_PX }
 
     for (const z of d.getZones()) {
       const b = z.getBoundingRect()
@@ -69,6 +70,16 @@ export function useDragAdd(stageRef: Ref<HTMLElement | null>): void {
         origin = { x: b.left / MM_TO_PX, y: b.top / MM_TO_PX }
         break
       }
+    }
+
+    // 签名：不直接落控件，而是弹出手写画板，确认后按落点插入（UX 与 WPS 一致）
+    if (type === 'signature') {
+      store.pendingSignatureDrop = {
+        leftMm: Math.max(0, pageMmX - origin.x),
+        topMm: Math.max(0, pageMmY - origin.y),
+      }
+      store.openSignaturePad()
+      return
     }
 
     store.addControlOfType(

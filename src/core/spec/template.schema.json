@@ -80,7 +80,7 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "enum": ["text", "image", "table", "barcode", "qrcode", "richtext", "rect", "line", "chart"]
+          "enum": ["text", "image", "table", "barcode", "qrcode", "richtext", "rect", "line", "chart", "math", "signature", "zone"]
         },
         "left": { "type": "number" },
         "top": { "type": "number" },
@@ -161,6 +161,11 @@
         "strokeDashArray": { "type": "array", "items": { "type": "number" } },
         "groupBy": { "type": "string" },
         "kind": { "enum": ["bar", "line", "pie"] },
+        "latex": { "type": "string" },
+        "displayMode": { "type": "boolean" },
+        "src": { "type": "string" },
+        "penWidth": { "type": "number", "minimum": 1 },
+        "color": { "type": "string" },
         "categories": { "type": "array", "items": { "type": "string" } },
         "series": {
           "type": "array",

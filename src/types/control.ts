@@ -17,6 +17,8 @@ export type ControlType =
   | 'rect'
   | 'line'
   | 'chart'
+  | 'math'
+  | 'signature'
   | 'zone'
 
 /** 全部控件的公共基座（§5.4a：printable 为通用属性） */
@@ -371,6 +373,49 @@ export interface ChartControl extends ControlBase {
   options?: ChartOptions
 }
 
+/* --------------------------------- 公式 ---------------------------------- */
+
+/**
+ * MathControl（LaTeX 数学公式控件）：基于 KaTeX 渲染。
+ *
+ * KaTeX 渲染产物为 HTML + Web Fonts（非 SVG）。设计期由 MathViewLayer.vue overlay
+ * 直接渲染 KaTeX HTML（屏幕矢量清晰）；导出 PDF 走和图表同一套栅格化路径（3× 高清
+ * 位图，与正文字体同链路），公式与其他控件同页位图化——简单可靠不糊。
+ *
+ * 序列化只存 latex 源码 + displayMode + 字号/颜色，恢复后由 KaTeX 重渲染。
+ */
+export interface MathControl extends ControlBase {
+  type: 'math'
+  /** LaTeX 源码，如 `c = \\pm\\sqrt{a^2 + b^2}` */
+  latex: string
+  /** 显示模式：true=块级独立行公式（$$...$$），false=行内公式（$...$） */
+  displayMode?: boolean
+  /** 字号（pt），默认 16 */
+  fontSize?: number
+  /** 字体颜色 hex / rgba，默认 #000000 */
+  color?: string
+}
+
+/* --------------------------------- 签名 ---------------------------------- */
+
+/**
+ * SignatureControl（手写签名控件）：基于弹出式手写画板（WPS 式）。
+ *
+ * 签名是**位图**（用户笔迹无法矢量还原），序列化为 PNG data-URI（内联自包含），
+ * 复用图片的渲染/导出链路（栅格化，与正文同质量保证清晰）。只存笔迹 src +
+ * 画笔粗细 penWidth + 笔色 color（元数据，方便属性面板回显与「重新签名」）。
+ * 控件宽高 = 笔迹实际包围盒（mm），保证插入后不变形。
+ */
+export interface SignatureControl extends ControlBase {
+  type: 'signature'
+  /** 手写笔迹 PNG（data:image/png;base64,…），内联自包含离线可用 */
+  src: string
+  /** 画笔粗细（px，仅作回显 / 重新签名默认值） */
+  penWidth?: number
+  /** 笔色 hex，默认 #000000 */
+  color?: string
+}
+
 /* ------------------------------ 页眉页脚区域 ------------------------------- */
 
 /**
@@ -401,4 +446,7 @@ export type AnyControl =
   | LineControl
   | RichTextControl
   | ChartControl
+  | MathControl
+  | SignatureControl
   | ZoneControl
+

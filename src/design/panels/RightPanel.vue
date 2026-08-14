@@ -26,6 +26,8 @@ import CodeProps from '@/design/panels/props/CodeProps.vue'
 import ShapeProps from '@/design/panels/props/ShapeProps.vue'
 import RichTextProps from '@/design/panels/props/RichTextProps.vue'
 import ChartProps from '@/design/panels/props/ChartProps.vue'
+import MathProps from '@/design/panels/props/MathProps.vue'
+import SignatureProps from '@/design/panels/props/SignatureProps.vue'
 
 const store = useDesignerStore()
 const control = computed(() => store.selectedControl)
@@ -50,6 +52,10 @@ const propsComponent = computed<Component | null>(() => {
       return RichTextProps
     case 'chart':
       return ChartProps
+    case 'math':
+      return MathProps
+    case 'signature':
+      return SignatureProps
     default:
       return null
   }
@@ -77,11 +83,13 @@ function setPaper(preset: string): void {
   store.pageSetup.height = p.height
   store.pageSetup.orientation = p.width <= p.height ? 'portrait' : 'landscape'
   store.designer?.setPage(store.pageSetup)
+  store.reflowBody()
 }
 
 function setMargin(side: 'top' | 'bottom' | 'left' | 'right', v: number | null): void {
   store.pageSetup.margin[side] = v ?? 0
   store.designer?.setPage(store.pageSetup)
+  store.reflowBody()
 }
 
 function setOrientation(v: 'portrait' | 'landscape'): void {
@@ -93,12 +101,14 @@ function setOrientation(v: 'portrait' | 'landscape'): void {
   }
   store.pageSetup.orientation = v
   store.designer?.setPage(store.pageSetup)
+  store.reflowBody()
 }
 
 function setCustomSize(side: 'width' | 'height', v: number | null): void {
   store.pageSetup[side] = v ?? 0
   store.pageSetup.orientation = (store.pageSetup.width ?? 0) <= (store.pageSetup.height ?? 0) ? 'portrait' : 'landscape'
   store.designer?.setPage(store.pageSetup)
+  store.reflowBody()
 }
 
 /* ------------------------------ 页面外观 ------------------------------ */
@@ -330,6 +340,19 @@ const watermark = computed<WatermarkConfig>(() => store.pageSetup.watermark ?? {
             <span class="props-label">右</span>
             <NInputNumber size="small" button-placement="both" :value="store.pageSetup.margin.right" :min="0" @update:value="setMargin('right', $event)" />
           </div>
+        </div>
+
+        <!-- 边距锁定：默认开启限制正文在边距内移动；关闭后自由移动（边距仅作参考线，内外都会打印） -->
+        <div class="props-row" style="margin-top: 4px">
+          <span class="props-label" style="min-width: 56px">边距锁定</span>
+          <NSwitch
+            size="small"
+            :value="store.marginLocked"
+            @update:value="store.setMarginLocked($event)"
+          />
+          <NText depth="3" style="font-size: 12px; margin-left: 6px">
+            {{ store.marginLocked ? '限制在边距内' : '可自由移动' }}
+          </NText>
         </div>
 
         <NEmpty description="在画布上选中控件以编辑属性" class="mt-8" size="small" />
