@@ -6,11 +6,19 @@
  */
 import {
   PrintClientError,
+  type ClientColumn,
+  type ClientDatabase,
+  type ClientDataListResponse,
+  type ClientRowsResponse,
+  type ClientTable,
+  type DbEngine,
   type PrinterHealth,
   type PrinterInfo,
   type PrinterListResponse,
   type PrintJobRequest,
   type PrintJobResponse,
+  type SystemFontEntry,
+  type SystemFontListResponse,
 } from './types'
 
 /** 出厂默认地址（用户未配置时使用） */
@@ -139,6 +147,273 @@ export async function listPrinters(
   return data.printers.map((p, i) => normalizePrinter(p ?? {}, i))
 }
 
+/* ------------------------------ GET /api/fonts ------------------------------ */
+
+/** 字体格式 → CSS format() 描述符 */
+export function fontFormatToCss(format: SystemFontEntry['format']): string {
+  switch (format) {
+    case 'ttf':
+      return 'truetype'
+    case 'otf':
+      return 'opentype'
+    case 'woff':
+      return 'woff'
+    case 'woff2':
+      return 'woff2'
+  }
+}
+
+/** 字体格式 → HTTP Content-Type */
+export function fontContentType(format: SystemFontEntry['format']): string {
+  switch (format) {
+    case 'ttf':
+      return 'font/ttf'
+    case 'otf':
+      return 'font/otf'
+    case 'woff':
+      return 'font/woff'
+    case 'woff2':
+      return 'font/woff2'
+  }
+}
+
+/**
+ * 枚举本机/局域网客户端的电脑系统字体。
+ * 字体字节本身不在此返回 —— 用 systemFontDataUrl() 拼装按需加载的 URL。
+ */
+export async function listSystemFonts(
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  timeoutMs: number = PROBE_TIMEOUT_MS,
+): Promise<SystemFontEntry[]> {
+  const data = await request<Partial<SystemFontListResponse>>(
+    joinUrl(baseUrl, '/api/fonts'),
+    { method: 'GET', headers: { Accept: 'application/json' } },
+    timeoutMs,
+  )
+  if (data.ok === false) {
+    throw new PrintClientError('service', '打印客户端未能枚举系统字体')
+  }
+  if (!Array.isArray(data.fonts)) {
+    throw new PrintClientError('parse', '响应缺少 fonts 数组')
+  }
+  return data.fonts.map((f) => normalizeSystemFont(f ?? {}))
+}
+
+/** 字体条目字段归一化（缺字段给安全默认） */
+function normalizeSystemFont(raw: Partial<SystemFontEntry>): SystemFontEntry {
+  const format: SystemFontEntry['format'] =
+    raw.format === 'otf' || raw.format === 'woff' || raw.format === 'woff2' ? raw.format : 'ttf'
+  return {
+    family: typeof raw.family === 'string' ? raw.family : '',
+    format,
+    path: typeof raw.path === 'string' ? raw.path : '',
+    size: typeof raw.size === 'number' ? raw.size : 0,
+  }
+}
+
+/**
+ * 构造按需加载某个字体字节的完整 URL（GET /api/fonts/data?path=…）。
+ * path 编码后作为 query；浏览器直接以这个 URL 作为 @font-face src / FontFace url。
+ */
+export function systemFontDataUrl(
+  entry: Pick<SystemFontEntry, 'path'>,
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+): string {
+  return `${joinUrl(baseUrl, '/api/fonts/data')}?path=${encodeURIComponent(entry.path)}`
+}
+
+/* ------------------------------ /api/data/*（数据库） ------------------------------ */
+
+/** 数据库相关请求的可选参数（与客户端路由的可选 query 对应） */
+export interface ClientDataQuery {
+  /** 已保存连接 ID，覆盖活动连接 */
+  connId?: string
+  /** sqlite | odbc（内联配置时填） */
+  engine?: DbEngine
+  /** 库名（缺省取客户端当前选中库） */
+  database?: string
+  /** 表名（缺省取客户端当前选中表） */
+  table?: string
+  /** 字段名逗号分隔，如 id,name（仅 rows） */
+  fields?: string
+  /** 返回行数（仅 rows；默认 100，上限 1000） */
+  limit?: number
+}
+
+/** POST /api/data/rows 的请求体（支持 where 参数化筛选，避免 GET 拼接 SQL） */
+export interface ClientRowsPostBody extends ClientDataQuery {
+  /** WHERE 子句（不含 WHERE 关键字，占位符用 ?） */
+  where?: string
+  /** 与 where 占位符对应的参数（按序） */
+  params?: unknown[]
+}
+
+/** 取数默认/上限行数 */
+export const ROWS_DEFAULT_LIMIT = 100
+export const ROWS_MAX_LIMIT = 1000
+
+/** 拼装数据库路由的可选 query 串（无参数返回空串） */
+function buildDataQuery(q?: ClientDataQuery): string {
+  if (!q) return ''
+  const p = new URLSearchParams()
+  if (q.connId) p.set('connId', q.connId)
+  if (q.engine) p.set('engine', q.engine)
+  if (q.database) p.set('database', q.database)
+  if (q.table) p.set('table', q.table)
+  if (q.fields) p.set('fields', q.fields)
+  if (typeof q.limit === 'number') {
+    const clamped = Math.max(1, Math.min(ROWS_MAX_LIMIT, Math.floor(q.limit)))
+    p.set('limit', String(clamped))
+  }
+  const s = p.toString()
+  return s ? `?${s}` : ''
+}
+
+/**
+ * 库条目归一化：兼容两种返回形态——
+ * - 纯字符串：`databases: ["byb"]`（客户端常见形态，与 tables 同构）
+ * - 对象：`databases: [{ name: "byb", engine: "sqlite" }]`
+ * 注意：若后端按字符串返回而此处只读 raw.name，会得到空串 → 下拉选项 label 全空。
+ */
+function normalizeClientDatabase(raw: string | Partial<ClientDatabase>): ClientDatabase {
+  if (typeof raw === 'string') {
+    return { name: raw, engine: 'sqlite', label: undefined }
+  }
+  return {
+    name: typeof raw.name === 'string' ? raw.name : '',
+    engine: raw.engine === 'odbc' ? 'odbc' : 'sqlite',
+    label: typeof raw.label === 'string' ? raw.label : undefined,
+  }
+}
+
+/**
+ * 表条目归一化：兼容两种返回形态——
+ * - 纯字符串：`tables: ["user"]`（客户端常见形态）
+ * - 对象：`tables: [{ name: "user", type: "table" }]`
+ */
+function normalizeClientTable(raw: string | Partial<ClientTable>): ClientTable {
+  if (typeof raw === 'string') {
+    return { name: raw, type: undefined }
+  }
+  return {
+    name: typeof raw.name === 'string' ? raw.name : '',
+    type: typeof raw.type === 'string' ? raw.type : undefined,
+  }
+}
+
+function normalizeClientColumn(raw: Partial<ClientColumn>): ClientColumn {
+  // 后端主键标记是 key:"PRI"（部分实现也直接给 primary:true），两者都认
+  const key = typeof raw.key === 'string' ? raw.key : ''
+  return {
+    name: typeof raw.name === 'string' ? raw.name : '',
+    type: typeof raw.type === 'string' ? raw.type : 'TEXT',
+    nullable: raw.nullable !== false,
+    primary: raw.primary === true || key === 'PRI',
+    key: key || undefined,
+    default: typeof raw.default === 'string' ? raw.default : undefined,
+  }
+}
+
+/** 列库（GET /api/data/databases） */
+export async function listClientDatabases(
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  q?: ClientDataQuery,
+  timeoutMs: number = PROBE_TIMEOUT_MS,
+): Promise<ClientDatabase[]> {
+  const data = await request<Partial<ClientDataListResponse>>(
+    joinUrl(baseUrl, `/api/data/databases${buildDataQuery(q)}`),
+    { method: 'GET', headers: { Accept: 'application/json' } },
+    timeoutMs,
+  )
+  if (data.ok === false) throw new PrintClientError('service', data.message || '列库失败')
+  if (!Array.isArray(data.databases)) throw new PrintClientError('parse', '响应缺少 databases 数组')
+  return data.databases.map((d) => normalizeClientDatabase(d ?? {}))
+}
+
+/** 列表（GET /api/data/tables） */
+export async function listClientTables(
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  q?: ClientDataQuery,
+  timeoutMs: number = PROBE_TIMEOUT_MS,
+): Promise<ClientTable[]> {
+  const data = await request<Partial<ClientDataListResponse>>(
+    joinUrl(baseUrl, `/api/data/tables${buildDataQuery(q)}`),
+    { method: 'GET', headers: { Accept: 'application/json' } },
+    timeoutMs,
+  )
+  if (data.ok === false) throw new PrintClientError('service', data.message || '列表失败')
+  if (!Array.isArray(data.tables)) throw new PrintClientError('parse', '响应缺少 tables 数组')
+  return data.tables.map((t) => normalizeClientTable(t ?? {}))
+}
+
+/** 列字段（GET /api/data/columns） */
+export async function listClientColumns(
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  q?: ClientDataQuery,
+  timeoutMs: number = PROBE_TIMEOUT_MS,
+): Promise<ClientColumn[]> {
+  const data = await request<Partial<ClientDataListResponse>>(
+    joinUrl(baseUrl, `/api/data/columns${buildDataQuery(q)}`),
+    { method: 'GET', headers: { Accept: 'application/json' } },
+    timeoutMs,
+  )
+  if (data.ok === false) throw new PrintClientError('service', data.message || '列字段失败')
+  if (!Array.isArray(data.columns)) throw new PrintClientError('parse', '响应缺少 columns 数组')
+  return data.columns.map((c) => normalizeClientColumn(c ?? {}))
+}
+
+/** 取数（GET /api/data/rows）。limit 缺省补 ROWS_DEFAULT_LIMIT 并钳制上限，确保行为明确。 */
+export async function fetchClientRows(
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  q?: ClientDataQuery,
+  timeoutMs: number = SUBMIT_TIMEOUT_MS,
+): Promise<ClientRowsResponse> {
+  const merged: ClientDataQuery = { limit: ROWS_DEFAULT_LIMIT, ...(q ?? {}) }
+  const data = await request<Partial<ClientRowsResponse>>(
+    joinUrl(baseUrl, `/api/data/rows${buildDataQuery(merged)}`),
+    { method: 'GET', headers: { Accept: 'application/json' } },
+    timeoutMs,
+  )
+  if (data.ok === false) throw new PrintClientError('service', data.message || '取数失败')
+  if (!Array.isArray(data.rows)) throw new PrintClientError('parse', '响应缺少 rows 数组')
+  return {
+    ok: true,
+    database: data.database,
+    table: data.table,
+    total: typeof data.total === 'number' ? data.total : data.rows.length,
+    rows: data.rows,
+    columns: Array.isArray(data.columns) ? data.columns : undefined,
+  }
+}
+
+/** 取数（POST /api/data/rows，支持 where/参数化筛选）。limit 同上默认处理。 */
+export async function postClientRows(
+  body: ClientRowsPostBody,
+  baseUrl: string = DEFAULT_PRINTER_BASE_URL,
+  timeoutMs: number = SUBMIT_TIMEOUT_MS,
+): Promise<ClientRowsResponse> {
+  const merged: ClientDataQuery = { limit: ROWS_DEFAULT_LIMIT, ...body }
+  const data = await request<Partial<ClientRowsResponse>>(
+    joinUrl(baseUrl, '/api/data/rows'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(merged),
+    },
+    timeoutMs,
+  )
+  if (data.ok === false) throw new PrintClientError('service', data.message || '取数失败')
+  if (!Array.isArray(data.rows)) throw new PrintClientError('parse', '响应缺少 rows 数组')
+  return {
+    ok: true,
+    database: data.database,
+    table: data.table,
+    total: typeof data.total === 'number' ? data.total : data.rows.length,
+    rows: data.rows,
+    columns: Array.isArray(data.columns) ? data.columns : undefined,
+  }
+}
+
 /* ------------------------------ 任务号生成 ------------------------------ */
 
 /**
@@ -169,7 +444,9 @@ export async function submitPrintJob(
   job: PrintJobRequest,
   baseUrl: string = DEFAULT_PRINTER_BASE_URL,
   timeoutMs: number = SUBMIT_TIMEOUT_MS,
+  onProgress?: (pct: number) => void,
 ): Promise<PrintJobResponse> {
+  onProgress?.(90)
   const data = await request<Partial<PrintJobResponse>>(
     joinUrl(baseUrl, '/print'),
     {
@@ -180,8 +457,10 @@ export async function submitPrintJob(
     timeoutMs,
   )
   if (data.ok !== true) {
+    onProgress?.(100)
     throw new PrintClientError('service', data.message || '打印客户端拒绝了本次任务')
   }
+  onProgress?.(100)
   return { ok: true, jobId: data.jobId ?? job.jobId, message: data.message }
 }
 

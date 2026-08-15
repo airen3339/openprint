@@ -21,6 +21,22 @@ export {
   generateJobId,
   blobToBase64,
   blobToText,
+  listSystemFonts,
+  systemFontDataUrl,
+  fontFormatToCss,
+  fontContentType,
+  ROWS_DEFAULT_LIMIT,
+  ROWS_MAX_LIMIT,
+  listClientDatabases,
+  listClientTables,
+  listClientColumns,
+  fetchClientRows,
+  postClientRows,
+} from './client'
+
+export type {
+  ClientDataQuery,
+  ClientRowsPostBody,
 } from './client'
 
 export { PrintClientError, describePrintError } from './types'
@@ -39,4 +55,12 @@ export type {
   PrintJobRequest,
   PrintJobResponse,
   PrintClientErrorCode,
+  SystemFontEntry,
+  SystemFontListResponse,
+  DbEngine,
+  ClientDatabase,
+  ClientTable,
+  ClientColumn,
+  ClientDataListResponse,
+  ClientRowsResponse,
 } from './types'

@@ -4,7 +4,7 @@
  * 卡片可拖拽入画布；页眉/页脚为点击插入（单例）；未开放的类型置灰。
  */
 import { computed, ref } from 'vue'
-import { NInput } from 'naive-ui'
+import { NInput, NScrollbar } from 'naive-ui'
 import type { AnyControl, ControlType } from '@/types/control'
 import { startControlDrag } from '@/design/hooks/useDragAdd'
 import { useDesignerStore } from '@/design/stores/designer'
@@ -143,25 +143,27 @@ function onClick(item: ControlItem): void {
     <div class="p-2">
       <NInput v-model:value="keyword" size="small" placeholder="搜索组件" clearable />
     </div>
-    <div class="flex-1 overflow-y-auto px-2 pb-2">
-      <div v-for="cat in filtered" :key="cat.name" class="mb-3">
-        <div class="mb-1.5 text-12px text-brand-text-3">{{ cat.name }}</div>
-        <div class="grid grid-cols-3 gap-1.5">
-          <div
-            v-for="item in cat.items"
-            :key="item.type"
-            class="control-card"
-            :class="{ 'is-disabled': item.disabled }"
-            :draggable="!item.disabled"
-            @dragstart="onDragStart($event, item)"
-            @click="onClick(item)"
-          >
-            <div :class="item.icon" class="text-18px" />
-            <div class="mt-1 text-12px">{{ item.label }}</div>
+    <NScrollbar class="flex-1 min-h-0">
+      <div class="px-2 pb-2">
+        <div v-for="cat in filtered" :key="cat.name" class="mb-3">
+          <div class="mb-1.5 text-12px text-brand-text-3">{{ cat.name }}</div>
+          <div class="grid grid-cols-3 gap-1.5">
+            <div
+              v-for="item in cat.items"
+              :key="item.type"
+              class="control-card"
+              :class="{ 'is-disabled': item.disabled }"
+              :draggable="!item.disabled"
+              @dragstart="onDragStart($event, item)"
+              @click="onClick(item)"
+            >
+              <div :class="item.icon" class="text-18px" />
+              <div class="mt-1 text-12px">{{ item.label }}</div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </NScrollbar>
   </div>
 </template>
 

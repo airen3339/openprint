@@ -23,7 +23,7 @@ import { createDemoTemplate } from './demo-template'
 
 /* ------------------------------- 类型 ------------------------------- */
 
-export type MarketCategory = 'invoice' | 'report' | 'receipt' | 'thermal' | 'label'
+export type MarketCategory = 'invoice' | 'report' | 'receipt' | 'thermal' | 'label' | 'resume' | 'contract' | 'doc'
 
 export interface MarketTemplate {
   id: string
@@ -44,6 +44,9 @@ export const MARKET_CATEGORY_LABEL: Record<MarketCategory, string> = {
   receipt: '小票',
   thermal: '热敏',
   label: '标签',
+  resume: '简历',
+  contract: '合同',
+  doc: '文档',
 }
 
 /* ------------------------------- helpers ------------------------------- */
@@ -85,6 +88,202 @@ function fullPage(
   ]
   if (footer.length) sections.push({ type: 'footer', height: 12, repeat: true, components: footer })
   return build(page, sections)
+}
+
+/* --------------------- 文档类（简历 / 合同 / 公函）专用助手 --------------------- */
+
+/** A4 文档模板统一纸张（左右各留 16mm，上下 14mm，呼吸感更好） */
+const A4DOC = paper(210, 297, { left: 16, right: 16, top: 14, bottom: 14 })
+/** 文档正文可用宽度（= 210 - 16 - 16） */
+const DOCW = 178
+
+/**
+ * 文档流式排版游标：从给定 top 起逐段堆叠，自动推进 y，避免手算重叠。
+ * section = 色条 + 白字标题；para = 段落（支持 \n 多行）；heading = 加粗小标题。
+ * 用于简历 / 合同 / 文档类长文模板。
+ */
+function docFlow(
+  prefix: string,
+  left: number,
+  width: number,
+  startTop = 0,
+  gap = 3.2,
+): {
+  para: (height: number, value: string, style?: NonNullable<TextControl['style']>) => AnyControl
+  heading: (text: string, fontSize?: number, beforeGap?: number) => AnyControl
+  section: (title: string, barColor?: string) => AnyControl
+  part: (title: string, accent?: string) => AnyControl
+  rule: (color?: string) => AnyControl
+  advance: (d: number) => void
+  get top(): number
+  items: AnyControl[]
+} {
+  let y = startTop
+  let n = 0
+  const items: AnyControl[] = []
+  const id = () => `${prefix}-ln${n++}`
+  return {
+    para(height, value, style = {}) {
+      const c = txt(id(), left, y, width, height, value, style)
+      items.push(c)
+      y += height + gap
+      return c
+    },
+    heading(text, fontSize = 13, beforeGap = 3) {
+      y += beforeGap
+      const h = fontSize + 5
+      const c = txt(id(), left, y, width, h, text, { fontSize, fontWeight: 'bold' })
+      items.push(c)
+      y += h + gap
+      return c
+    },
+    section(title, barColor = '#1677ff') {
+      y += 2
+      const h = 7
+      items.push(box(id(), left, y, width, h, barColor, undefined, 0))
+      const c = txt(id(), left + 3, y, width - 6, h, title, {
+        fontSize: 11,
+        fontWeight: 'bold',
+        fill: '#ffffff',
+      })
+      items.push(c)
+      y += h + gap
+      return c
+    },
+    /** 简历小节（精致版）：左侧短色条 + 字距标题 + 底部发丝线，替代整条粗色块 */
+    part(title, accent = '#1677ff') {
+      y += 3
+      const h = 6.5
+      items.push(box(id(), left, y, 1.8, h, accent, undefined, 0))
+      const t = txt(id(), left + 4.5, y - 0.5, width - 4.5, h + 1, title, {
+        fontSize: 12,
+        fontWeight: 'bold',
+        fill: '#1f2329',
+        letterSpacing: 1,
+      })
+      items.push(t)
+      const lineY = y + h + 1.4
+      items.push(rule(id(), left, lineY, width, '#e3e6ea', 0.5))
+      y = lineY + 3
+      return t
+    },
+    rule(color = '#cccccc') {
+      const c = rule(id(), left, y, width, color, 0.6)
+      items.push(c)
+      y += gap + 1
+      return c
+    },
+    advance(d) {
+      y += d
+    },
+    get top() {
+      return y
+    },
+    items,
+  }
+}
+
+/* ================= 简历姓名横幅（正文首元素，不再占用页眉节） ================= */
+
+/**
+ * 色带式横幅：整条品牌色块 + 左侧强调条 + 白字（适合 IT / 设计 / 医学等活力风格）。
+ * 返回控件数组，置于正文 top:0（= 页面上边距之下，不贴物理边缘）。
+ */
+function bannerBand(
+  prefix: string,
+  name: string,
+  role: string,
+  contact: string,
+  bg: string,
+  accent: string,
+  nameSize = 18,
+  bandH = 36,
+): AnyControl[] {
+  return [
+    box(`${prefix}-band`, 0, 0, DOCW, bandH, bg, undefined, 0),
+    box(`${prefix}-band-accent`, 0, 0, 3, bandH, accent, undefined, 0),
+    txt(`${prefix}-name`, 9, 4, DOCW - 18, nameSize + 2, name, {
+      fontSize: nameSize,
+      fontWeight: 'bold',
+      fill: '#ffffff',
+      letterSpacing: 1,
+    }),
+    txt(`${prefix}-role`, 9, 4 + nameSize + 2.5, DOCW - 18, 4.5, role, {
+      fontSize: 11,
+      fill: 'rgba(255,255,255,0.88)',
+    }),
+    txt(`${prefix}-contact`, 9, 4 + nameSize + 8.5, DOCW - 18, 4.5, contact, {
+      fontSize: 8.5,
+      fill: 'rgba(255,255,255,0.72)',
+    }),
+  ]
+}
+
+/** 左右分栏式横幅：左侧大字号姓名 + 右侧联系方式竖排 + 底部强调色细线（适合金融 / 通用）。 */
+function bannerSplit(
+  prefix: string,
+  name: string,
+  role: string,
+  contact: string,
+  accent: string,
+  nameColor = '#1f2329',
+  nameFont = '思源黑体',
+  nameSize = 20,
+  bandH = 26,
+): AnyControl[] {
+  return [
+    txt(`${prefix}-name`, 0, 0, DOCW - 62, nameSize + 2, name, {
+      fontSize: nameSize,
+      fontWeight: 'bold',
+      fill: nameColor,
+      fontFamily: nameFont,
+      letterSpacing: 1,
+    }),
+    txt(`${prefix}-role`, 0, nameSize + 4, DOCW - 62, 5, role, { fontSize: 11, fill: '#666666' }),
+    txt(`${prefix}-contact`, DOCW - 64, 1, 64, bandH - 6, contact, {
+      fontSize: 8.5,
+      fill: '#888888',
+      textAlign: 'right',
+      lineHeight: 1.7,
+    }),
+    rule(`${prefix}-rule`, 0, bandH - 1.5, DOCW, accent, 1.1),
+  ]
+}
+
+/** 居中经典式横幅：居中大字姓名 + 居中联系 + 短下划线（适合教师等稳重风格）。 */
+function bannerClassic(
+  prefix: string,
+  name: string,
+  role: string,
+  contact: string,
+  accent: string,
+  nameSize = 21,
+  bandH = 28,
+): AnyControl[] {
+  return [
+    txt(`${prefix}-name`, 0, 0, DOCW, nameSize + 2, name, {
+      fontSize: nameSize,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      fill: '#1f2329',
+      letterSpacing: 5,
+    }),
+    txt(`${prefix}-role`, 0, nameSize + 4, DOCW, 5, role, { fontSize: 11, textAlign: 'center', fill: '#666666' }),
+    txt(`${prefix}-contact`, 0, nameSize + 10, DOCW, 4.5, contact, {
+      fontSize: 8.5,
+      textAlign: 'center',
+      fill: '#999999',
+    }),
+    rule(`${prefix}-rule`, DOCW / 2 - 26, bandH - 1.5, 52, accent, 1.1),
+  ]
+}
+
+/** 技能胶囊：浅底圆角块 + 居中文字（一行一行排布，调用方循环放置） */
+function chip(prefix: string, x: number, y: number, w: number, h: number, text: string, bg: string, fg = '#1f2329'): AnyControl[] {
+  return [
+    box(`${prefix}-bg`, x, y, w, h, bg, undefined, 3),
+    txt(`${prefix}-tx`, x, y, w, h, text, { fontSize: 8.5, textAlign: 'center', fill: fg }),
+  ]
 }
 
 function txt(
@@ -951,6 +1150,395 @@ export const MARKET_TEMPLATES: MarketTemplate[] = [
         txt('tr-note', 0, 32, w, 4, '扫码溯源 · 品质可查', { fontSize: 7.5, textAlign: 'center', fill: '#888888' }),
       ]
       return bodyOnly(paper(60, 40, { top: 3, right: 2, bottom: 3, left: 2 }), lines)
+    },
+  },
+
+  /* ============ 简历（各专业人才模板：每款独立配色/版式，姓名横幅放正文不占页眉） ============ */
+
+  {
+    id: 'market-resume-it',
+    name: '简历 · 软件/互联网',
+    category: 'resume',
+    desc: '深蓝科技风：姓名色带 + 技能胶囊 + 项目经历，工程师感十足',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerBand('ri', '张伟', '高级前端工程师 / 5 年经验', '电话：138-0000-0000　邮箱：zhangwei@example.com　地点：深圳', '#1f3864', '#2f6fed')
+      const f = docFlow('ri', 0, DOCW, 40)
+      f.part('个人简介', '#2f6fed')
+      f.para(13, '专注 Web 前端与跨端工程化，主导过多个百万级用户产品的前端架构设计与性能优化；\n擅长 Vue / React 技术栈与 TypeScript，注重工程规范、可维护性与交付质量。')
+      f.part('教育背景', '#2f6fed')
+      f.para(12, '2016.09 - 2020.06　某某大学　计算机科学与技术　本科\n主修：数据结构、操作系统、计算机网络、软件工程')
+      f.part('工作经历', '#2f6fed')
+      f.para(16, '2021.07 - 至今　某某科技有限公司　高级前端工程师\n· 负责核心 SaaS 平台前端架构，落地组件库与微前端方案，构建耗时下降 60%\n· 主导性能专项，首屏时间由 3.2s 优化至 1.1s')
+      f.para(12, '2020.07 - 2021.06　某某网络科技　前端工程师\n· 参与电商中台建设，独立负责订单与营销模块前端开发')
+      f.part('项目经验', '#2f6fed')
+      f.para(12, 'OpenPrint 打印设计器（开源）\n基于 Fabric.js 的可视化打印模板设计器，支持公式 / 图表 / 签名等组件。')
+      f.part('技能特长', '#2f6fed')
+      const skillRows = [
+        ['TypeScript', 'Vue3', 'React', 'Vite'],
+        ['Node.js', 'Webpack', '微前端', '性能优化'],
+        ['Canvas', '打印排版', 'CI/CD', 'Docker'],
+      ]
+      let cy = f.top
+      for (const row of skillRows) {
+        const n = row.length
+        const cw = (DOCW - (n - 1) * 3) / n
+        row.forEach((s, i) => {
+          f.items.push(...chip(`ri-${i}-${Math.round(cy)}`, i * (cw + 3), cy, cw, 6.5, s, '#e8eefb', '#1f3864'))
+        })
+        cy += 8.5
+      }
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+  {
+    id: 'market-resume-finance',
+    name: '简历 · 金融/财务',
+    category: 'resume',
+    desc: '藏蓝+金线商务风：左右分栏姓名 + 宋体大字 + 细分小节',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerSplit('rf', '李娜', '财务分析师 / CPA', '电话：139-0000-0000\n邮箱：lina@example.com\n地点：上海', '#b8860b', '#1f3a5f', '思源宋体')
+      const f = docFlow('rf', 0, DOCW, 29)
+      f.part('个人简介', '#1f3a5f')
+      f.para(13, '6 年财务分析与预算管理经验，熟悉上市公司财报编制与经营分析；\n熟练使用财务系统与数据建模，擅长从财务视角支持业务决策。')
+      f.part('教育背景', '#1f3a5f')
+      f.para(12, '2014.09 - 2018.06　某某财经大学　会计学　本科\n主修：财务会计、管理会计、审计、税法、金融学')
+      f.part('工作经历', '#1f3a5f')
+      f.para(16, '2019.07 - 至今　某某集团　财务分析师\n· 负责月度经营分析报告与滚动预算，搭建利润预测模型\n· 主导成本专项，识别并推动降本约 8%')
+      f.para(12, '2018.07 - 2019.06　某某会计师事务所　审计专员\n· 参与 3 家上市公司年审，负责收入与往来科目审计')
+      f.part('专业证书', '#1f3a5f')
+      f.para(12, '注册会计师（CPA）｜税务师｜初级会计职称\n英语 CET-6｜计算机二级（Excel 高级应用）')
+      f.part('技能特长', '#1f3a5f')
+      f.para(16, '· 财务：报表合并、预算管理、经营分析、税务筹划\n· 工具：Excel / Power BI / SAP / 用友\n· 软技能：跨部门沟通、数据可视化表达')
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+  {
+    id: 'market-resume-teacher',
+    name: '简历 · 教师/教育',
+    category: 'resume',
+    desc: '暖陶土色温雅风：居中姓名 + 短下划线 + 简约小节',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerClassic('rt', '王芳', '中学语文教师 / 班主任', '电话：137-0000-0000　邮箱：wangfang@example.com　地点：杭州', '#b75a3c')
+      const f = docFlow('rt', 0, DOCW, 37)
+      f.part('个人简介', '#b75a3c')
+      f.para(13, '5 年中学语文教学经验，两届毕业班带班，所带班级语文成绩稳居年级前列；\n持有高级中学教师资格证，熟悉新课标与中考命题趋势。')
+      f.part('教育背景', '#b75a3c')
+      f.para(12, '2015.09 - 2019.06　某某师范大学　汉语言文学（师范）　本科\n主修：古代文学、现当代文学、语文课程与教学论')
+      f.part('工作经历', '#b75a3c')
+      f.para(16, '2020.09 - 至今　某某中学　语文教师 / 班主任\n· 承担两个班语文教学，兼任年级备课组长\n· 组织课本剧、阅读分享等学科活动，学生参与度高')
+      f.para(12, '2019.09 - 2020.08　某某教育培训　语文教研员\n· 参与教材同步讲义编写与师资培训')
+      f.part('教学成果', '#b75a3c')
+      f.para(12, '· 2023 年获区级“优秀班主任”称号\n· 指导学生获市级作文竞赛一等奖 2 人次')
+      f.part('技能特长', '#b75a3c')
+      f.para(16, '· 教学：课堂设计、学情分析、培优补差\n· 工具：课件制作（PPT / 希沃）、班级管理系统\n· 其他：普通话一级乙等、书法特长')
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+  {
+    id: 'market-resume-design',
+    name: '简历 · 设计/艺术',
+    category: 'resume',
+    desc: '紫金撞色风：姓名色带 + 装饰圆点 + 技能胶囊，作品集气质',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerBand('rd', '陈墨', 'UI / 视觉设计师', '电话：136-0000-0000　邮箱：chenmo@example.com　地点：广州', '#6d28d9', '#f59e0b')
+      // 装饰：横幅右下角半透明圆点，增强设计感
+      banner.push(box('rd-deco1', DOCW - 26, 3, 11, 11, 'rgba(255,255,255,0.14)', undefined, 5.5))
+      banner.push(box('rd-deco2', DOCW - 13, 11, 6, 6, 'rgba(255,255,255,0.18)', undefined, 3))
+      const f = docFlow('rd', 0, DOCW, 40)
+      f.part('个人简介', '#7c3aed')
+      f.para(13, '4 年互联网产品设计经验，主导过 C 端 App 与 B 端后台的视觉体系搭建；\n追求简洁克制的视觉语言，关注一致性与可用性。')
+      f.part('教育背景', '#7c3aed')
+      f.para(12, '2017.09 - 2021.06　某某美术学院　视觉传达设计　本科\n主修：平面构成、色彩、界面设计、字体设计')
+      f.part('工作经历', '#7c3aed')
+      f.para(16, '2021.07 - 至今　某某互联网公司　UI 设计师\n· 负责核心产品 redesign，建立组件库与设计规范\n· 输出运营活动视觉，平均点击率提升 25%')
+      f.para(12, '2020.07 - 2021.06　某某设计工作室　实习设计师\n· 参与品牌 VI 与电商详情页设计')
+      f.part('设计项目', '#7c3aed')
+      f.para(12, '· 某某银行 App 改版（设计主导）\n· 开源图标库 OpenIcons（作者，2k+ 下载）')
+      f.part('技能特长', '#7c3aed')
+      const skillRows = [
+        ['Figma', 'Sketch', 'Photoshop', 'Illustrator'],
+        ['AE 动效', '设计系统', '插画', '品牌视觉'],
+      ]
+      let cy = f.top
+      for (const row of skillRows) {
+        const n = row.length
+        const cw = (DOCW - (n - 1) * 3) / n
+        row.forEach((s, i) => {
+          f.items.push(...chip(`rd-${i}-${Math.round(cy)}`, i * (cw + 3), cy, cw, 6.5, s, '#f1e9ff', '#6d28d9'))
+        })
+        cy += 8.5
+      }
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+  {
+    id: 'market-resume-medical',
+    name: '简历 · 医学/护理',
+    category: 'resume',
+    desc: '青绿清新风：姓名色带 + 浅绿点缀，干净可信赖',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerBand('rm', '刘洋', '临床护士 / 护师', '电话：135-0000-0000　邮箱：liuyang@example.com　地点：成都', '#0e7c66', '#7fd8c4')
+      const f = docFlow('rm', 0, DOCW, 40)
+      f.part('个人简介', '#0e7c66')
+      f.para(13, '6 年三甲医院临床护理经验，扎实的基础护理与急救能力；\n持有护士执业证书与护师职称，责任心强、沟通能力好。')
+      f.part('教育背景', '#0e7c66')
+      f.para(12, '2014.09 - 2018.06　某某医科大学　护理学　本科\n主修：基础护理学、内外科护理、急救护理、护理心理学')
+      f.part('工作经历', '#0e7c66')
+      f.para(16, '2018.07 - 至今　某某三甲医院　临床护士（内科）\n· 负责病房患者全程护理与健康教育\n· 参与科室质控与带教，带教实习护士 10+ 人')
+      f.para(12, '2016.07 - 2018.06　某某医院　实习护士\n· 轮转急诊、手术室、病房等科室')
+      f.part('专业技能', '#0e7c66')
+      f.para(16, '· 操作：静脉输液、心肺复苏、心电监护、无菌操作\n· 能力：病情观察、护患沟通、应急预案执行\n· 其他：电子病历系统、院感防控')
+      f.part('证书', '#0e7c66')
+      f.para(12, '护士执业证书｜护师职称｜急救技能证（BLS）｜普通话二级甲')
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+  {
+    id: 'market-resume-general',
+    name: '简历 · 通用应届',
+    category: 'resume',
+    desc: '极简现代风：左右分栏姓名 + 蓝色点缀，通用不出错',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const banner = bannerSplit('rg', '赵敏', '应届毕业生 / 市场营销', '电话：133-0000-0000\n邮箱：zhaomin@example.com\n地点：武汉', '#1677ff')
+      const f = docFlow('rg', 0, DOCW, 29)
+      f.part('个人简介', '#1677ff')
+      f.para(13, '市场营销专业应届本科，具备扎实的市场调研与文案功底；\n乐观主动、学习力强，期望在品牌或运营方向深耕成长。')
+      f.part('教育背景', '#1677ff')
+      f.para(12, '2022.09 - 2026.06　某某大学　市场营销　本科（GPA 3.7/4.0）\n主修：市场营销、消费者行为、统计学、商务数据分析')
+      f.part('校园经历', '#1677ff')
+      f.para(12, '· 校学生会宣传部部长，统筹校级活动 5 场\n· 市场营销大赛校赛二等奖（团队负责人）')
+      f.part('实习经历', '#1677ff')
+      f.para(16, '2025.07 - 2025.12　某某品牌公司　市场部实习生\n· 协助社媒内容策划与投放，账号涨粉 1.2w\n· 整理周报与竞品分析，支持活动复盘')
+      f.part('技能与自评', '#1677ff')
+      f.para(16, '· 工具：Excel / PPT / 剪映 / 秀米\n· 能力：文案撰写、数据分析、活动执行\n· 自评：执行力强、协作性好、抗压能力佳')
+      return bodyOnly(A4DOC, [...banner, ...f.items])
+    },
+  },
+
+  /* ============ 合同（及通用公函） ============ */
+
+  {
+    id: 'market-contract-labor',
+    name: '劳动合同',
+    category: 'contract',
+    desc: 'A4 标准劳动合同：双方信息 + 8 项核心条款 + 签章栏',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('cl-title', 0, 0, w, 11, '劳 动 合 同 书', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('cl-rule', 0, 16, w, '#1677ff', 1),
+      ]
+      const f = docFlow('cl', 0, w)
+      f.para(14, '甲方（用人单位）：某某科技有限公司　　法定代表人：＿＿＿＿\n乙方（劳动者）：＿＿＿＿　　身份证号：＿＿＿＿＿＿＿＿')
+      f.section('第一条　合同期限')
+      f.para(12, '本合同为固定期限劳动合同，期限 3 年，自 2026 年 9 月 1 日至 2029 年 8 月 31 日；其中试用期 6 个月。')
+      f.section('第二条　工作内容与地点')
+      f.para(8, '乙方担任研发类岗位，工作地点为深圳市；甲方可在经营需要范围内合理调整。')
+      f.section('第三条　劳动报酬')
+      f.para(8, '甲方每月 10 日前以货币形式支付乙方上月工资，试用期工资不低于转正工资的 80%。')
+      f.section('第四条　社会保险与福利')
+      f.para(8, '甲方依法为乙方缴纳养老、医疗、失业、工伤、生育等社会保险。')
+      f.section('第五条　劳动保护')
+      f.para(8, '甲方建立健全劳动安全卫生制度，对乙方进行劳动安全卫生教育。')
+      f.section('第六条　合同解除')
+      f.para(12, '双方协商一致可解除本合同；乙方提前 30 日书面通知甲方可解除本合同。')
+      f.section('第七条　违约责任')
+      f.para(8, '任何一方违反本合同约定，应承担相应法律责任并赔偿对方损失。')
+      f.section('第八条　其他')
+      f.para(8, '本合同一式两份，甲乙双方各执一份，自双方签字（盖章）之日起生效。')
+      f.advance(3)
+      f.para(8, '甲方（盖章）：＿＿＿＿＿＿　　乙方（签字）：＿＿＿＿＿＿')
+      f.para(7, '签订日期：2026 年　　月　　日')
+      const footer: AnyControl[] = [
+        txt('cl-page', 88, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
+      ]
+      return fullPage(A4DOC, header, f.items, footer)
+    },
+  },
+  {
+    id: 'market-contract-service',
+    name: '服务合同',
+    category: 'contract',
+    desc: 'A4 技术服务合同：委托/服务方 + 服务内容/期限/费用 + 保密与违约',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('cs-title', 0, 0, w, 11, '技 术 服 务 合 同', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('cs-rule', 0, 16, w, '#1677ff', 1),
+      ]
+      const f = docFlow('cs', 0, w)
+      f.para(14, '委托方（甲方）：＿＿＿＿＿＿＿＿　　服务方（乙方）：某某技术有限公司')
+      f.section('一、服务内容')
+      f.para(12, '乙方为甲方提供系统设计与开发服务，具体范围、交付物以附件《需求说明书》为准。')
+      f.section('二、服务期限')
+      f.para(8, '本合同服务期自 2026 年 9 月 1 日起至 2027 年 2 月 28 日止，共 6 个月。')
+      f.section('三、费用与支付')
+      f.para(12, '合同总金额人民币 180,000 元（含税）；分三期支付：启动 30%、里程碑 40%、验收 30%。')
+      f.section('四、双方权利与义务')
+      f.para(12, '甲方应及时提供必要资料与确认；乙方应按约定质量与进度交付，并保障交付物可用。')
+      f.section('五、保密条款')
+      f.para(8, '双方对在履约中获知的对方商业秘密负有保密义务，保密期至合同终止后 3 年。')
+      f.section('六、违约责任')
+      f.para(8, '逾期交付或逾期付款的，违约方按日万分之五支付违约金。')
+      f.section('七、争议解决')
+      f.para(8, '因本合同发生争议，双方协商不成时，提交甲方所在地有管辖权的人民法院诉讼。')
+      f.advance(3)
+      f.para(8, '甲方（盖章）：＿＿＿＿＿＿　　乙方（盖章）：＿＿＿＿＿＿')
+      f.para(7, '签订日期：2026 年　　月　　日')
+      const footer: AnyControl[] = [
+        txt('cs-page', 88, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
+      ]
+      return fullPage(A4DOC, header, f.items, footer)
+    },
+  },
+  {
+    id: 'market-contract-lease',
+    name: '房屋租赁合同',
+    category: 'contract',
+    desc: 'A4 房屋租赁合同：房屋情况 + 租期/租金 + 双方义务 + 解除与违约',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('cr-title', 0, 0, w, 11, '房 屋 租 赁 合 同', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('cr-rule', 0, 16, w, '#1677ff', 1),
+      ]
+      const f = docFlow('cr', 0, w)
+      f.para(14, '出租方（甲方）：＿＿＿＿　　承租方（乙方）：＿＿＿＿　　身份证号：＿＿＿＿＿＿＿＿')
+      f.section('一、房屋基本情况')
+      f.para(12, '甲方将位于＿＿＿＿＿＿＿＿＿＿＿＿的房屋出租给乙方，建筑面积约＿＿㎡，用途为居住。')
+      f.section('二、租赁期限')
+      f.para(8, '租期自 2026 年 9 月 1 日起至 2027 年 8 月 31 日止，共 12 个月。')
+      f.section('三、租金及押金')
+      f.para(12, '月租金人民币＿＿＿＿元，押一付三；乙方应于每期开始前 5 日内支付。')
+      f.section('四、双方义务')
+      f.para(12, '甲方保证房屋可正常使用；乙方合理使用、不得擅自转租或改变结构。')
+      f.section('五、合同解除')
+      f.para(8, '一方违约或不可抗力导致合同无法履行的，另一方可解除合同并追偿损失。')
+      f.section('六、违约责任')
+      f.para(8, '提前退租的，违约方应赔偿对方一个月租金作为违约金。')
+      f.advance(3)
+      f.para(8, '甲方（签字）：＿＿＿＿＿＿　　乙方（签字）：＿＿＿＿＿＿')
+      f.para(7, '签订日期：2026 年　　月　　日')
+      const footer: AnyControl[] = [
+        txt('cr-page', 88, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
+      ]
+      return fullPage(A4DOC, header, f.items, footer)
+    },
+  },
+  {
+    id: 'market-contract-nda',
+    name: '保密协议（NDA）',
+    category: 'contract',
+    desc: 'A4 保密协议：保密信息定义 + 保密义务 + 期限与违约',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('cn-title', 0, 0, w, 11, '保 密 协 议 书', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('cn-rule', 0, 16, w, '#1677ff', 1),
+      ]
+      const f = docFlow('cn', 0, w)
+      f.para(14, '披露方（甲方）：＿＿＿＿＿＿＿＿　　接收方（乙方）：＿＿＿＿＿＿＿＿')
+      f.section('一、保密信息定义')
+      f.para(12, '本协议所称保密信息，指一方以书面、口头或其他形式向另一方披露的、标注或应被合理认定为保密的技术与商业信息。')
+      f.section('二、保密义务')
+      f.para(12, '接收方应对保密信息严格保密，仅用于约定目的，不得向第三方披露或用于自身利益。')
+      f.section('三、保密期限')
+      f.para(8, '保密义务自本协议签署之日起生效，至保密信息进入公知领域之日止，最短不少于 3 年。')
+      f.section('四、违约责任')
+      f.para(8, '接收方违反本协议的，应赔偿披露方因此遭受的全部损失，并承担维权合理费用。')
+      f.section('五、其他')
+      f.para(8, '本协议一式两份，双方各执一份，自签字（盖章）之日起生效。')
+      f.advance(3)
+      f.para(8, '甲方（盖章）：＿＿＿＿＿＿　　乙方（盖章）：＿＿＿＿＿＿')
+      f.para(7, '签订日期：2026 年　　月　　日')
+      const footer: AnyControl[] = [
+        txt('cn-page', 88, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', { fontSize: 9, textAlign: 'right', fill: '#555555' }),
+      ]
+      return fullPage(A4DOC, header, f.items, footer)
+    },
+  },
+
+  /* ============ 通用公函 ============ */
+
+  {
+    id: 'market-doc-leave',
+    name: '请假条 / 证明',
+    category: 'doc',
+    desc: 'A4 请假条：称呼 + 事由 + 起止时间 + 落款，可改为在职/实习证明',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('dl-title', 0, 2, w, 11, '请 假 条', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('dl-rule', 0, 18, w, '#1677ff', 1),
+      ]
+      const f = docFlow('dl', 0, w)
+      f.para(7, '尊敬的领导：')
+      f.para(16, '本人因＿＿＿＿＿＿（事/病）需请假，请假时间自 2026 年 9 月 1 日至 2026 年 9 月 5 日，\n共计 5 天。请假期间工作已做好交接安排，恳请批准。')
+      f.para(7, '此致\n敬礼')
+      f.advance(2)
+      f.para(7, '申请人：＿＿＿＿　　联系方式：＿＿＿＿')
+      f.para(7, '日期：2026 年　　月　　日')
+      f.advance(4)
+      f.para(7, '（审批）直属领导意见：＿＿＿＿　　人力资源部：＿＿＿＿')
+      return fullPage(A4DOC, header, f.items)
+    },
+  },
+  {
+    id: 'market-doc-notice',
+    name: '通知 / 公告',
+    category: 'doc',
+    desc: 'A4 通知公告：标题 + 主送 + 事项条目 + 落款单位/日期',
+    sizeLabel: 'A4 · 210×297',
+    pageW: 210,
+    pageH: 297,
+    build: () => {
+      const w = DOCW
+      const header: AnyControl[] = [
+        txt('dn-title', 0, 2, w, 11, '通　　知', { fontSize: 18, fontWeight: 'bold', textAlign: 'center' }),
+        rule('dn-rule', 0, 18, w, '#1677ff', 1),
+      ]
+      const f = docFlow('dn', 0, w)
+      f.para(7, '各部门、全体员工：')
+      f.para(16, '现将近期有关事项通知如下，请遵照执行：\n一、国庆放假安排：10 月 1 日至 10 月 7 日，共 7 天，10 月 8 日（周六）正常上班。\n二、节前请做好安全检查与数据备份，关闭非必要电源设备。')
+      f.para(12, '三、假期值班表另行发布，值班人员保持通讯畅通，遇突发事件及时上报。\n四、本通知自发布之日起执行，如有调整另行通知。')
+      f.para(7, '特此通知。')
+      f.advance(2)
+      f.para(7, '落款单位：某某公司行政部')
+      f.para(7, '2026 年 9 月 20 日')
+      return fullPage(A4DOC, header, f.items)
     },
   },
 ]

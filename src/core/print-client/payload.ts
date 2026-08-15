@@ -39,6 +39,12 @@ export interface BuildPrintPayloadOptions {
    * - `'jpeg'`：体积小，仅体积敏感场景。
    */
   imageType?: 'jpeg' | 'png'
+  /**
+   * 进度回调（0–100）。渲染+PDF 生成阶段会逐步推进：
+   * 5（开始）→ 30（渲染完成）→ 30~80（逐页栅格化）→ 85（PDF 编码完成）。
+   * 推送阶段由 `submitPrintJob` 的回调继续推进。
+   */
+  onProgress?: (pct: number) => void
 }
 
 /**
@@ -52,15 +58,24 @@ export async function buildPrintPayload(
   request: RenderRequest,
   options: BuildPrintPayloadOptions = {},
 ): Promise<PrintPayload> {
+  const onProgress = options.onProgress
+  onProgress?.(5)
+
   const result = await renderDocument(request)
   const pages = result.pages.length
   const deco = request.output?.pageDecoration
 
+  onProgress?.(30)
   const blob = await documentToPdf(result, {
     scale: options.scale ?? 3,
     imageType: options.imageType ?? 'png',
     pageDecoration: deco,
+    onPage: (current, total) => {
+      // 逐页栅格化：30% → 80%
+      onProgress?.(30 + Math.round((current / Math.max(total, 1)) * 50))
+    },
   })
+  onProgress?.(85)
   const base64 = await blobToBase64(blob)
   return {
     format: 'pdf',

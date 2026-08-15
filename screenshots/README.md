@@ -10,3 +10,5 @@
 | `report-design.png` | 报表设计效果（表格 + 图表） | 1200×800 |
 | `desktop-client.png` | C++ Qt 桌面客户端界面 | 1200×800 |
 | `erp-integration.png` | ERP 对接流程示意图 | 1200×800 |
+| `sponsor-wechat.jpg` | 微信赞助收款码 | 400×400 |
+| `sponsor-alipay.jpg` | 支付宝赞助收款码 | 400×400 |

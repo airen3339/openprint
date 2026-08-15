@@ -40,7 +40,7 @@ const message = useMessage()
 
 /* ------------------------------ 功能栏 ------------------------------ */
 
-type NavKey = 'local' | 'remote' | 'ai' | 'feedback'
+type NavKey = 'local' | 'remote' | 'ai' | 'feedback' | 'group'
 const activeKey = ref<NavKey>('local')
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string; desc: string }> = [
@@ -48,6 +48,7 @@ const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string; desc: string 
   { key: 'remote', label: '远程云打印', icon: 'i-carbon-cloud-upload', desc: '通过远程打印服务出纸' },
   { key: 'ai', label: 'AI 助手', icon: 'i-carbon-ai-status', desc: '用自然语言生成打印模板' },
   { key: 'feedback', label: '功能反馈', icon: 'i-carbon-chat', desc: '改进建议 / 新功能需求' },
+  { key: 'group', label: '交流群', icon: 'i-carbon-group', desc: '扫码加入 QQ 交流群' },
 ]
 
 /* ------------------------------ 配置模型 ------------------------------ */
@@ -82,6 +83,13 @@ function resetAll(): void {
 
 function close(): void {
   emit('update:show', false)
+}
+
+/* ------------------------------ 交流群 ------------------------------ */
+
+/** 在新标签打开 QQ 群二维码大图 */
+function openQrLarge(): void {
+  window.open('/qqgroup.jpg', '_blank', 'noopener')
 }
 
 /* --------------------------- 远程连接测试 --------------------------- */
@@ -486,6 +494,33 @@ function copyToClipboard(value: string, label: string): void {
           </div>
         </div>
       </div>
+
+      <!-- 交流群 -->
+      <div v-else-if="activeKey === 'group'" class="flex flex-col gap-4">
+        <div class="rounded-8px border border-brand-border bg-brand-surface p-4 text-center">
+          <div class="config-title mb-1">QQ 交流群</div>
+          <NText depth="3" class="block text-12px mb-3">
+            扫码加入 OpenPrint 用户交流群，第一时间获取更新、模板与答疑。
+          </NText>
+          <img
+            src="/qqgroup.jpg"
+            alt="QQ 交流群二维码"
+            class="qq-group-qr"
+            @click="openQrLarge"
+          />
+          <div class="mt-3 flex items-center justify-center gap-2">
+            <NButton size="small" secondary @click="openQrLarge">
+              <template #icon>
+                <div class="i-carbon-zoom-in text-14px" />
+              </template>
+              查看大图
+            </NButton>
+          </div>
+          <NText depth="3" class="block text-12px mt-3">
+            若二维码失效，请联系微信 <b>{{ FEEDBACK_WECHAT }}</b> 邀您入群。
+          </NText>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -530,5 +565,15 @@ function copyToClipboard(value: string, label: string): void {
 .settings-nav-item.is-active {
   background: rgba(22, 119, 255, 0.12);
   color: var(--brand-primary);
+}
+.qq-group-qr {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 8px;
+  border: 1px solid var(--brand-border);
+  background: #fff;
+  cursor: zoom-in;
 }
 </style>

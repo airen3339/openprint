@@ -1,13 +1,18 @@
 <script setup lang="ts">
 /**
- * DataSourceTree —— 数据源字段树（《设计方案》§19.4.3a 第五节）
+ * DataSourceTree —— 数据源三选一 + 字段树（《设计方案》§19.4.3a 第五节）
  *
- * 金蝶式树形：数据源 → 子表 → 分组/字段。
- * 字段可拖绑（占位），支持搜索过滤、手动刷新。
+ * 顶部「三选一」切换数据源 provider：
+ *   - 示例数据（零后端开箱即用）
+ *   - ERP 接口（代码层配置，优先级最高；未配置则禁用）
+ *   - 数据库（本地客户端 /api/data/*；需手动开启，不默认请求）
+ * 选中「数据库」时展开四步探索器（库→表→列→行）；字段树在下方统一拖拽绑定。
  */
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NInput, NSelect, NSpace, NTooltip, NSpin } from 'naive-ui'
+import { NButton, NInput, NRadioButton, NRadioGroup, NScrollbar, NSelect, NSpin, NTooltip } from 'naive-ui'
 import { useDataSourceStore } from '@/design/stores/dataSource'
+import DatabaseExplorer from './DatabaseExplorer.vue'
+import type { DataSourceKind } from '@/config/data-source'
 
 const store = useDataSourceStore()
 const keyword = ref('')
@@ -15,6 +20,10 @@ const keyword = ref('')
 const sourceOptions = computed(() =>
   store.sources.map((s) => ({ label: s.name, value: s.id })),
 )
+
+function onSelectProvider(v: string | number): void {
+  void store.selectProvider(v as DataSourceKind)
+}
 
 const filteredGroups = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -64,17 +73,22 @@ const typeLabel = (type: string): string => {
 
 <template>
   <div class="flex h-full flex-col">
+    <!-- 三选一（固定） -->
     <div class="border-b border-brand-border px-3 py-2">
-      <div class="text-12px text-brand-text-3">数据源</div>
-      <NSelect
+      <div class="mb-1 text-12px text-brand-text-3">数据源类型</div>
+      <NRadioGroup
+        :value="store.kind"
         size="small"
-        :value="store.activeSourceId"
-        :options="sourceOptions"
-        @update:value="store.selectSource($event)"
-      />
+        @update:value="onSelectProvider"
+      >
+        <NRadioButton value="sample">示例数据</NRadioButton>
+        <NRadioButton value="erp" :disabled="!store.erpAvailable">ERP</NRadioButton>
+        <NRadioButton value="database">数据库</NRadioButton>
+      </NRadioGroup>
     </div>
 
-    <div class="flex items-center gap-1 p-2">
+    <!-- 搜索 + 刷新（固定工具条） -->
+    <div class="flex items-center gap-1 border-b border-brand-border p-2">
       <NInput v-model:value="keyword" size="small" placeholder="搜索字段" clearable />
       <NTooltip>
         <template #trigger>
@@ -82,44 +96,64 @@ const typeLabel = (type: string): string => {
             <div class="i-carbon-renew text-14px" />
           </NButton>
         </template>
-        刷新字段
+        {{ store.kind === 'database' ? '重新取数' : '刷新字段' }}
       </NTooltip>
     </div>
 
-    <NSpin :show="store.loading" class="flex-1">
-      <div class="overflow-y-auto p-2 pt-0">
-        <div v-for="group in filteredGroups" :key="group.table.id" class="mb-3">
-          <div class="mb-1 flex items-center gap-1 text-11px font-medium text-brand-text-3">
-            <div class="i-carbon-data-table text-12px" />
-            {{ group.table.name }}
-            <span v-if="group.table.isArray" class="text-brand-primary">[]</span>
-          </div>
-          <div
-            v-for="field in group.fields"
-            :key="field.path"
-            class="field-item group"
-            draggable="true"
-            @dragstart="(e: DragEvent) => {
-              e.dataTransfer?.setData('application/x-openprint-binding', field.path)
-            }"
-          >
-            <span class="flex-1 truncate text-12px">
-              {{ field.label }}
-              <span v-if="field.custom" class="ml-1 inline-block rounded bg-blue-50 px-1 text-9px text-blue-500">
-                自定义
-              </span>
-            </span>
-            <span class="text-9px" :class="typeColor(field.type)">
-              {{ typeLabel(field.type) }}
-            </span>
-            <span class="ml-1 truncate text-9px text-brand-text-3">{{ field.path }}</span>
-          </div>
+    <!-- 可滚动内容区：数据库探索器/数据源选择 + 字段树 -->
+    <NScrollbar class="flex-1 min-h-0">
+      <div class="flex flex-col">
+        <!-- 数据库：四步探索器 -->
+        <DatabaseExplorer v-if="store.kind === 'database'" />
+
+        <!-- 非数据库：数据源选择 -->
+        <div v-else class="border-b border-brand-border px-3 py-2">
+          <div class="mb-1 text-12px text-brand-text-3">数据源</div>
+          <NSelect
+            size="small"
+            :value="store.activeSourceId"
+            :options="sourceOptions"
+            @update:value="store.selectSource($event)"
+          />
         </div>
-        <div v-if="filteredGroups.length === 0" class="py-4 text-center text-12px text-brand-text-3">
-          暂无字段
-        </div>
+
+        <!-- 字段树 -->
+        <NSpin :show="store.loading">
+          <div class="p-2 pt-0">
+            <div v-for="group in filteredGroups" :key="group.table.id" class="mb-3">
+              <div class="mb-1 flex items-center gap-1 text-11px font-medium text-brand-text-3">
+                <div class="i-carbon-data-table text-12px" />
+                {{ group.table.name }}
+                <span v-if="group.table.isArray" class="text-brand-primary">[]</span>
+              </div>
+              <div
+                v-for="field in group.fields"
+                :key="field.path"
+                class="field-item group"
+                draggable="true"
+                @dragstart="(e: DragEvent) => {
+                  e.dataTransfer?.setData('application/x-openprint-binding', field.path)
+                }"
+              >
+                <span class="flex-1 truncate text-12px">
+                  {{ field.label }}
+                  <span v-if="field.custom" class="ml-1 inline-block rounded bg-blue-50 px-1 text-9px text-blue-500">
+                    自定义
+                  </span>
+                </span>
+                <span class="text-9px" :class="typeColor(field.type)">
+                  {{ typeLabel(field.type) }}
+                </span>
+                <span class="ml-1 truncate text-9px text-brand-text-3">{{ field.path }}</span>
+              </div>
+            </div>
+            <div v-if="filteredGroups.length === 0" class="py-4 text-center text-12px text-brand-text-3">
+              暂无字段
+            </div>
+          </div>
+        </NSpin>
       </div>
-    </NSpin>
+    </NScrollbar>
   </div>
 </template>
 

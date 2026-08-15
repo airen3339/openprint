@@ -31,6 +31,9 @@ const CATEGORY_ICON: Record<MarketCategory, string> = {
   receipt: 'i-carbon-receipt',
   thermal: 'i-carbon-document-horizontal',
   label: 'i-carbon-tag',
+  resume: 'i-carbon-user',
+  contract: 'i-carbon-document',
+  doc: 'i-carbon-notebook',
 }
 
 const filtered = computed(() => {

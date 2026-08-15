@@ -23,7 +23,6 @@ import {
 import { exportDocument, downloadBlob, type ExportFormat } from '@/core/export-engine'
 import { useDesignerStore } from '@/design/stores/designer'
 import { useDataSourceStore } from '@/design/stores/dataSource'
-import { buildPreviewData } from '@/design/preview/preview-data'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ (e: 'update:show', value: boolean): void }>()
@@ -52,7 +51,9 @@ async function onExport(): Promise<void> {
   exporting.value = true
   try {
     const template = store.buildTemplate()
-    const data = buildPreviewData(dsStore.activeFields, { rows: rowCount.value })
+    // 与预览共用同一份数据：数据库模式用真实行，sample/ERP 用明细行数合成
+    dsStore.setPreviewRowCount(rowCount.value)
+    const data = dsStore.previewData
     const res = await exportDocument(
       {
         template,

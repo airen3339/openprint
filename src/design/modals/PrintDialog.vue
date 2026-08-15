@@ -20,6 +20,7 @@ import {
   NButton,
   NInputNumber,
   NModal,
+  NProgress,
   NRadioButton,
   NRadioGroup,
   NSelect,
@@ -258,6 +259,9 @@ watch(
   (open) => {
     if (!open) return
     resetDefaults()
+    progress.value = 0
+    progressStage.value = ''
+    progressStatus.value = 'info'
     if (target.value === 'local') void detectLocalPrinters()
     else void detectCloudPrinters()
   },
@@ -272,7 +276,12 @@ function refreshPrinters(): void {
 /* ------------------------------ 推送打印 ------------------------------ */
 
 const printing = ref(false)
-const printingHint = ref('')
+/** 进度条百分比（0–100），由 buildPrintPayload / submitPrintJob 的回调推进 */
+const progress = ref(0)
+/** 当前阶段文案（渲染中 / 生成 PDF 中 / 推送中 / 完成 / 失败） */
+const progressStage = ref('')
+/** 进度条状态，驱动颜色：info=进行中 / success=成功 / error=失败 */
+const progressStatus = ref<'default' | 'info' | 'success' | 'error' | 'warning'>('info')
 
 async function doPrint(): Promise<void> {
   if (!isConnected.value) {
@@ -286,22 +295,37 @@ async function doPrint(): Promise<void> {
   if (printing.value) return
 
   printing.value = true
+  progress.value = 0
+  progressStatus.value = 'info'
+  progressStage.value = '正在排版渲染…'
   try {
-    printingHint.value = '正在排版渲染…'
     const template = store.buildTemplate()
     const data = buildPreviewData(dsStore.activeFields)
-    const payload = await buildPrintPayload({
-      template,
-      data,
-      output: {
-        pageDecoration: {
-          backgroundColor: store.pageSetup.backgroundColor ?? '#ffffff',
-          watermark: store.pageSetup.watermark,
+    const payload = await buildPrintPayload(
+      {
+        template,
+        data,
+        output: {
+          pageDecoration: {
+            backgroundColor: store.pageSetup.backgroundColor ?? '#ffffff',
+            watermark: store.pageSetup.watermark,
+          },
         },
       },
-    })
+      {
+        scale: 3,
+        imageType: 'png',
+        onProgress: (p) => {
+          progress.value = p
+          if (p < 30) progressStage.value = '正在排版渲染…'
+          else if (p < 85) progressStage.value = '正在生成 PDF…'
+          else progressStage.value = '准备推送…'
+        },
+      },
+    )
 
-    printingHint.value = `正在推送 ${payload.format.toUpperCase()}（${payload.pages} 页 · ${formatPayloadSize(payload.bytes)}）…`
+    progressStage.value = '正在推送 PDF 到打印机…'
+    progressStatus.value = 'info'
     const res = await submitPrintJob(
       {
         jobId: generateJobId(),
@@ -317,18 +341,27 @@ async function doPrint(): Promise<void> {
         color: color.value === 'color',
       },
       printerBase.value,
+      undefined,
+      (p) => {
+        progress.value = p
+      },
     )
 
+    progress.value = 100
+    progressStatus.value = 'success'
+    progressStage.value = '打印任务已提交'
     const job = res.jobId ? ` · 任务号 ${res.jobId}` : ''
     message.success(
       `已推送到「${selectedPrinter.value}」：${payload.pages} 页 · ${payload.format.toUpperCase()} · ${formatPayloadSize(payload.bytes)} · ${copies.value} 份${job}`,
     )
-    emit('update:show', false)
+    // 停留 700ms 让用户看清 100%，再关闭
+    setTimeout(() => emit('update:show', false), 700)
   } catch (e) {
+    progressStatus.value = 'error'
+    progressStage.value = '打印失败'
     message.error(`推送失败：${describePrintError(e)}`)
   } finally {
     printing.value = false
-    printingHint.value = ''
   }
 }
 
@@ -506,24 +539,41 @@ function close(): void {
       <span>推送规则：所有文档统一转 <b>PDF（base64）</b> 推送，本地客户端用 QPrinter 直接打印。</span>
     </div>
 
+    <!-- 打印进度（渲染 + 推送 PDF 到打印机） -->
+    <div
+      v-if="printing || progressStatus === 'success' || progressStatus === 'error'"
+      class="print-progress"
+    >
+      <n-progress
+        type="line"
+        :percentage="progress"
+        :status="progressStatus"
+        :height="12"
+        :processing="printing && progress < 100"
+        border-radius="6"
+        indicator-placement="outside"
+      />
+      <div class="mt-1.5 flex items-center justify-between">
+        <span class="text-12px text-brand-text-2">{{ progressStage || '处理中…' }}</span>
+        <span class="text-12px tabular-nums text-brand-text-3">{{ progress }}%</span>
+      </div>
+    </div>
+
     <template #footer>
-      <div class="flex items-center justify-between">
-        <NText depth="3" class="text-12px">{{ printingHint }}</NText>
-        <div class="flex justify-end gap-2">
-          <NButton size="small" :disabled="printing" @click="close">取消</NButton>
-          <NButton
-            size="small"
-            type="primary"
-            :loading="printing"
-            :disabled="!isConnected || printing"
-            @click="doPrint"
-          >
-            <template #icon>
-              <div class="i-carbon-printer text-14px" />
-            </template>
-            打印
-          </NButton>
-        </div>
+      <div class="flex items-center justify-end gap-2">
+        <NButton size="small" :disabled="printing" @click="close">取消</NButton>
+        <NButton
+          size="small"
+          type="primary"
+          :loading="printing"
+          :disabled="!isConnected || printing"
+          @click="doPrint"
+        >
+          <template #icon>
+            <div class="i-carbon-printer text-14px" />
+          </template>
+          打印
+        </NButton>
       </div>
     </template>
   </NModal>
@@ -631,5 +681,12 @@ function close(): void {
   background: var(--brand-surface);
   font-size: 12px;
   color: var(--brand-text-2);
+}
+
+.print-progress {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--brand-surface);
 }
 </style>

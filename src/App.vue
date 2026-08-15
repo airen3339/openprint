@@ -34,7 +34,7 @@ const themeOverrides = computed(() => (isDark.value ? darkThemeOverrides : light
 
           <div class="flex min-h-0 flex-1">
             <!-- 左侧组件库面板（组件/数据源/图层 三 tab 自含，无需额外侧边导航栏） -->
-            <aside class="w-250px flex-shrink-0 border-r border-brand-border bg-brand-surface">
+            <aside class="w-250px flex-shrink-0 overflow-y-auto border-r border-brand-border bg-brand-surface">
               <LeftPanel />
             </aside>
 

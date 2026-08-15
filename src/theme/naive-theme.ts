@@ -261,7 +261,18 @@ const lightComponents: Pick<
   Select: {
     peers: {
       InternalSelection: { heightMedium: '32px', borderRadius: '6px' },
-      InternalSelectMenu: { borderRadius: '6px' },
+      // 下拉菜单：亮色下显式钉死表面背景 + 语义文字色，
+      // 避免 portal 到 body 后主题 token 未生效导致「浅灰背景 + 白字」不可读。
+      InternalSelectMenu: {
+        borderRadius: '6px',
+        color: LIGHT_SURFACE,
+        optionTextColor: LIGHT_TEXT_1,
+        optionTextColorActive: PRIMARY,
+        optionTextColorPressed: PRIMARY_PRESSED,
+        optionTextColorDisabled: LIGHT_TEXT_3,
+        optionColorPending: 'rgba(0, 0, 0, 0.04)',
+        optionColorActive: 'rgba(0, 0, 0, 0.06)',
+      },
     },
   },
   Popconfirm: {
@@ -330,7 +341,18 @@ const darkComponents: Pick<
   Select: {
     peers: {
       InternalSelection: { heightMedium: '32px', borderRadius: '6px' },
-      InternalSelectMenu: { borderRadius: '6px' },
+      // 下拉菜单：暗色下显式钉死表面背景 + 语义文字色（白字/主色），
+      // 避免 portal 到 body 后主题 token 未生效导致「浅灰背景 + 白字」不可读。
+      InternalSelectMenu: {
+        borderRadius: '6px',
+        color: DARK_SURFACE,
+        optionTextColor: DARK_TEXT_1,
+        optionTextColorActive: DARK_PRIMARY,
+        optionTextColorPressed: DARK_PRIMARY_PRESSED,
+        optionTextColorDisabled: DARK_TEXT_3,
+        optionColorPending: 'rgba(255, 255, 255, 0.06)',
+        optionColorActive: 'rgba(255, 255, 255, 0.1)',
+      },
     },
   },
   Popconfirm: {

@@ -12,10 +12,12 @@ import {
   NRadioButton,
   NButton,
 } from 'naive-ui'
+import type { SelectOption, SelectGroupOption } from 'naive-ui'
 import type { CellFormat, CellFormatKind, TextControl, TextStyle } from '@/types/control'
 import { useDesignerStore } from '@/design/stores/designer'
 import { useDataSourceStore } from '@/design/stores/dataSource'
 import { FONT_CATALOG } from '@/core/fonts/catalog'
+import { useSystemFonts } from '@/core/fonts/system'
 import BindingEditor from './BindingEditor.vue'
 import {
   formatKindOptions,
@@ -33,11 +35,23 @@ const store = useDesignerStore()
 const control = computed(() => store.selectedControl as TextControl | null)
 const ds = useDataSourceStore()
 
-/** 内置字体下拉选项（空值 = 系统默认） */
-const fontOptions = [
-  { label: '系统默认', value: '' },
-  ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
-]
+/** 字体下拉选项（内置预设 + 连接客户端后的电脑系统字体分组） */
+const sysFonts = useSystemFonts()
+
+const fontOptions = computed<(SelectOption | SelectGroupOption)[]>(() => {
+  const builtin: SelectOption[] = [
+    { label: '系统默认', value: '' },
+    ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
+  ]
+  // 客户端未连接 → 不展示电脑系统字体分组（避免下拉里出现一堆客户端不可达的字体）
+  if (!sysFonts.ready.value) return builtin
+  const sysOpts: SelectOption[] = sysFonts.grouped.value.map((g) => ({ label: g.family, value: g.family }))
+  return [
+    { type: 'group', label: '预设字体', key: 'builtin', children: builtin.filter((o) => o.value !== '') },
+    { type: 'group', label: `电脑系统字体（${sysFonts.count.value}）`, key: 'system', children: sysOpts },
+    { label: '系统默认', value: '' },
+  ]
+})
 
 function patch(p: Record<string, unknown>): void {
   if (control.value) store.updateControl(control.value.id, p)
@@ -282,6 +296,7 @@ function isPresetDatePattern(p?: string): boolean {
         :value="control.style?.fontFamily ?? ''"
         :options="fontOptions"
         placeholder="系统默认"
+        filterable
         @update:value="patchStyle({ fontFamily: $event || undefined })"
       />
     </div>

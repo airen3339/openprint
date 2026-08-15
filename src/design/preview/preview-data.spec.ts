@@ -45,4 +45,26 @@ describe('buildPreviewData —— 预览数据合成', () => {
   it('字段为空返回 {}', () => {
     expect(buildPreviewData([], { rows: 3 })).toEqual({})
   })
+
+  it('dataRows 优先：用真实行映射进数组路径，跳过 sample 合成', () => {
+    const real = [
+      { productCode: 'P-A', productName: '甲', qty: 3, price: 10, amount: 30 },
+      { productCode: 'P-B', productName: '乙', qty: 1, price: 20, amount: 20 },
+    ]
+    const data = buildPreviewData(FIELDS, { dataRows: real })
+    expect(Array.isArray(data.items)).toBe(true)
+    const items = data.items as Array<Record<string, unknown>>
+    expect(items).toHaveLength(2)
+    // 真实值原样保留（金额不被重新计算为负/错）
+    expect(items[0]!.productCode).toBe('P-A')
+    expect(items[0]!.amount).toBe(30)
+    expect(items[1]!.productName).toBe('乙')
+  })
+
+  it('dataRows 缺失字段补零/空串', () => {
+    const data = buildPreviewData(FIELDS, { dataRows: [{ productCode: 'X' }] })
+    const items = data.items as Array<Record<string, unknown>>
+    expect(items[0]!.qty).toBe(0)
+    expect(items[0]!.productName).toBe('')
+  })
 })

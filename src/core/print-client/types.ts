@@ -2,11 +2,13 @@
  * 本地打印机客户端服务 —— 协议类型
  *
  * 对接本机常驻的打印客户端（默认 http://127.0.0.1:18888），提供：
- *   GET  /health   服务健康与版本
- *   GET  /printers 打印机列表
- *   POST /print    提交打印任务（单页 SVG / 多页 PDF-base64）
+ *   GET  /health     服务健康与版本
+ *   GET  /printers   打印机列表
+ *   POST /print      提交打印任务（单页 SVG / 多页 PDF-base64）
+ *   GET  /api/fonts       枚举本机/局域网电脑系统字体
+ *   GET  /api/fonts/data  拉取字体字节（精确 Content-Type）
  *
- * 主任铁律：无后端全链路可用 —— 客户端不可达时设计器一切功能照常，只是不能推送打印。
+ * 主任铁律：无后端全链路可用 —— 客户端不可达时设计器一切功能照常，只是不能推送打印、不能使用电脑系统字体。
  */
 
 /* ------------------------------ /health ------------------------------ */
@@ -111,6 +113,94 @@ export interface PrintJobResponse {
   ok: boolean
   /** 客户端队列任务 ID */
   jobId?: string
+  /** 服务端消息（失败原因等） */
+  message?: string
+}
+
+/* ------------------------------ /api/fonts ------------------------------ */
+
+/** 单个电脑系统字体描述（来自 GET /api/fonts） */
+export interface SystemFontEntry {
+  /** 字体族名（直接作为 CSS font-family 用；面板展示也用它） */
+  family: string
+  /** 字体格式：ttf / otf / woff / woff2 */
+  format: 'ttf' | 'otf' | 'woff' | 'woff2'
+  /** 客户端机器上的绝对路径（作为 GET /api/fonts/data?path= 的参数） */
+  path: string
+  /** 字体文件大小（字节，仅用于 UI 提示） */
+  size: number
+}
+
+/** GET /api/fonts 响应体 */
+export interface SystemFontListResponse {
+  ok: boolean
+  /** 字体总数 */
+  count: number
+  fonts: SystemFontEntry[]
+}
+
+/* ------------------------------ /api/data/*（数据库） ------------------------------ */
+
+/** 连接引擎类型 */
+export type DbEngine = 'sqlite' | 'odbc'
+
+/** 单个数据库描述（GET /api/data/databases） */
+export interface ClientDatabase {
+  /** 库标识（sqlite 可为文件路径，odbc 可为 DSN 名） */
+  name: string
+  /** 连接类型 */
+  engine?: DbEngine
+  /** 备注/可读名（可选） */
+  label?: string
+}
+
+/** 单张表描述（GET /api/data/tables） */
+export interface ClientTable {
+  /** 表名 */
+  name: string
+  /** 类型（表 / 视图等） */
+  type?: string
+}
+
+/** 单字段元信息（GET /api/data/columns） */
+export interface ClientColumn {
+  /** 字段名 */
+  name: string
+  /** 字段类型（如 INTEGER / TEXT / VARCHAR(64)） */
+  type: string
+  /** 是否可空 */
+  nullable?: boolean
+  /** 是否主键（后端用 key:"PRI" 表达时由 normalize 推导） */
+  primary?: boolean
+  /** 键标记原文（后端返回：PRI=主键 / UNI=唯一键 / MUL=多值索引 / ""=无） */
+  key?: string
+  /** 默认值（可选） */
+  default?: string
+}
+
+/** /api/data/* 列表类（databases / tables / columns）通用响应包装 */
+export interface ClientDataListResponse {
+  ok: boolean
+  databases?: ClientDatabase[]
+  tables?: ClientTable[]
+  columns?: ClientColumn[]
+  /** 服务端消息（失败原因等） */
+  message?: string
+}
+
+/** GET /api/data/rows 取数响应体 */
+export interface ClientRowsResponse {
+  ok: boolean
+  /** 当前库（回显，便于校验） */
+  database?: string
+  /** 当前表（回显） */
+  table?: string
+  /** 命中总行数（可能大于返回行数） */
+  total?: number
+  /** 返回的行（上限 limit） */
+  rows: Array<Record<string, unknown>>
+  /** 行字段顺序（可选，前端可忽略，直接按 object keys） */
+  columns?: string[]
   /** 服务端消息（失败原因等） */
   message?: string
 }

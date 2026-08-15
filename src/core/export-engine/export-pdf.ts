@@ -47,6 +47,11 @@ export interface PdfOptions {
    * 图表矢量叠加路径不受影响（图表本身走 svg2pdf 矢量注入）。
    */
   imageType?: 'jpeg' | 'png'
+  /**
+   * 逐页栅格化进度回调。`current` 从 1 起，`total` 为总页数。
+   * 每完成一页调用一次（在 addImage / 矢量叠加之后），供上层推进进度条。
+   */
+  onPage?: (current: number, total: number) => void
 }
 
 /** 把 PdfOptions 的 imageType 解析成 canvas.toBlob 的 MIME 与 addImage 的格式名 */
@@ -183,6 +188,9 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
       const fallback = await rasterizePageFull(result, i, scale, opts.pageDecoration, imageType)
       doc.addImage(fallback, addImageFmt, 0, 0, w, h)
     }
+
+    // 每完成一页回调一次（current 从 1 起），上层据此推进进度条
+    opts.onPage?.(i + 1, result.pages.length)
   }
 
   return doc.output('blob')

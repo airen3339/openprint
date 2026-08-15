@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MARKET_TEMPLATES } from './market-templates'
+import { MARKET_TEMPLATES, MARKET_CATEGORY_LABEL } from './market-templates'
 import { render } from '@/core/sdk'
 import type { AnyControl, TableControl, ChartControl } from '@/types/control'
 
@@ -62,5 +62,54 @@ describe('market-financial-report 模板', () => {
     // 不应有"数据源非数组"类告警（明细表用内嵌 data，不依赖 dataSource）
     const fatal = warnings.filter((w) => w.code === 'DATASOURCE_NOT_ARRAY')
     expect(fatal).toEqual([])
+  })
+})
+
+describe('模板市场新增：简历 / 合同 / 文档', () => {
+  it('新增类目标签已注册', () => {
+    expect(MARKET_CATEGORY_LABEL.resume).toBe('简历')
+    expect(MARKET_CATEGORY_LABEL.contract).toBe('合同')
+    expect(MARKET_CATEGORY_LABEL.doc).toBe('文档')
+  })
+
+  const ids = [
+    'market-resume-it',
+    'market-resume-finance',
+    'market-resume-teacher',
+    'market-resume-design',
+    'market-resume-medical',
+    'market-resume-general',
+    'market-contract-labor',
+    'market-contract-service',
+    'market-contract-lease',
+    'market-contract-nda',
+    'market-doc-leave',
+    'market-doc-notice',
+  ]
+
+  it.each(ids)('%s 在市场中可构建且为 A4 含正文内容', (id) => {
+    const t = findTemplate(id)
+    expect(t).toBeTruthy()
+    expect(t.pageW).toBe(210)
+    expect(t.pageH).toBe(297)
+    const body = t.build().document.sections.find((s) => s.type === 'body')
+    expect(body).toBeTruthy()
+    expect((body as { components: unknown[] }).components.length).toBeGreaterThan(0)
+  })
+
+  it('劳动合同可端到端渲染且含签章文本', async () => {
+    const tpl = findTemplate('market-contract-labor').build()
+    const { html, pages, warnings } = await render({ template: tpl })
+    expect(pages).toBeGreaterThanOrEqual(1)
+    expect(html).toContain('劳动合同')
+    expect(html).toContain('盖章')
+    expect(warnings.filter((w) => w.code === 'DATASOURCE_NOT_ARRAY')).toEqual([])
+  })
+
+  it('简历可端到端渲染且含姓名', async () => {
+    const tpl = findTemplate('market-resume-it').build()
+    const { html, pages } = await render({ template: tpl })
+    expect(pages).toBeGreaterThanOrEqual(1)
+    expect(html).toContain('张伟')
   })
 })

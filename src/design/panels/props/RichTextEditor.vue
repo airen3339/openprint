@@ -3,13 +3,15 @@
  * RichTextEditor —— 富文本编辑器（tiptap v3 + StarterKit + 字体扩展，懒加载）
  * 由 RichTextProps 通过 defineAsyncComponent 引入，未选中富文本时不加载 tiptap。
  */
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { NButton, NSelect } from 'naive-ui'
+import type { SelectOption, SelectGroupOption } from 'naive-ui'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { FontFamily } from '@tiptap/extension-font-family'
 import { FONT_CATALOG } from '@/core/fonts/catalog'
+import { useSystemFonts } from '@/core/fonts/system'
 
 const props = defineProps<{ modelValue?: string }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
@@ -48,10 +50,21 @@ watch(
   () => refreshFont(),
 )
 
-const FONT_OPTIONS = [
-  { label: '系统默认', value: '' },
-  ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
-]
+const sysFonts = useSystemFonts()
+
+const FONT_OPTIONS = computed<(SelectOption | SelectGroupOption)[]>(() => {
+  const builtin: SelectOption[] = [
+    { label: '系统默认', value: '' },
+    ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
+  ]
+  if (!sysFonts.ready.value) return builtin
+  const sysOpts: SelectOption[] = sysFonts.grouped.value.map((g) => ({ label: g.family, value: g.family }))
+  return [
+    { type: 'group', label: '预设字体', key: 'builtin', children: builtin.filter((o) => o.value !== '') },
+    { type: 'group', label: `电脑系统字体（${sysFonts.count.value}）`, key: 'system', children: sysOpts },
+    { label: '系统默认', value: '' },
+  ]
+})
 
 function onFontChange(family: string): void {
   if (!family) {

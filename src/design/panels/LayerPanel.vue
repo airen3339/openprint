@@ -49,7 +49,7 @@ const layers = computed(() => {
     <div class="border-b border-brand-border px-3 py-2 text-12px text-brand-text-3">
       图层（{{ layers.length }} 项）
     </div>
-    <NScrollbar class="flex-1">
+    <NScrollbar class="flex-1 min-h-0">
       <div class="p-1">
         <div
           v-for="layer in layers"

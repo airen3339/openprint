@@ -30,9 +30,9 @@ import { render } from '@/core/sdk'
 import type { RenderWarning } from '@/core/layout-engine/types'
 import { mmToPx } from '@/core/units'
 import { builtinFontFaceCss } from '@/core/fonts/loader'
+import { useSystemFonts } from '@/core/fonts/system'
 import { useDataSourceStore } from '@/design/stores/dataSource'
 import { useDesignerStore } from '@/design/stores/designer'
-import { buildPreviewData } from './preview-data'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ (e: 'update:show', value: boolean): void }>()
@@ -87,7 +87,7 @@ async function doRender(): Promise<void> {
   errorText.value = ''
   try {
     const template = store.buildTemplate()
-    const data = buildPreviewData(dsStore.activeFields)
+    const data = dsStore.previewData
 
     const res = await render({
       template,
@@ -180,14 +180,16 @@ function onIframeLoad(): void {
   win?.addEventListener('scroll', syncCurrentPage, { passive: true })
 }
 
-/** 向 iframe head 注入内置字体 @font-face（绝对 URL，srcdoc 内可加载同源 /fonts/） */
+/** 向 iframe head 注入内置字体 @font-face（绝对 URL，srcdoc 内可加载同源 /fonts/）
+ *  以及连接到打印客户端时的电脑系统字体 @font-face（src 指向客户端 /api/fonts/data） */
 function injectFonts(): void {
   const doc = iframeRef.value?.contentDocument
   if (!doc || typeof window === 'undefined') return
   if (doc.getElementById('op-fonts')) return
   const style = doc.createElement('style')
   style.id = 'op-fonts'
-  style.textContent = builtinFontFaceCss(window.location.origin)
+  const sys = useSystemFonts().systemFontFaceCss()
+  style.textContent = builtinFontFaceCss(window.location.origin) + (sys ? `\n/* 电脑系统字体（来自打印客户端）*/\n${sys}` : '')
   doc.head.appendChild(style)
 }
 
@@ -267,7 +269,7 @@ function close(): void {
             :value="scale"
             :options="ZOOM_OPTIONS"
             size="small"
-            style="width: 108px"
+            style="width: 88px"
             :consistent-menu-width="false"
             @update:value="onZoomSelect"
           />
@@ -296,7 +298,7 @@ function close(): void {
           </NButton>
           <NButton size="small" type="primary" :disabled="!totalPages" @click="doPrint">
             <div class="i-carbon-printer mr-1 text-14px" />
-            打印
+            浏览器打印
           </NButton>
           <NButton quaternary size="small" @click="close">
             <div class="i-carbon-close text-16px" />

@@ -20,6 +20,7 @@ import {
   NSelect,
   NTooltip,
 } from 'naive-ui'
+import type { SelectOption, SelectGroupOption } from 'naive-ui'
 import type { TableCell, TableCellStyle, TableControl, CellFormat, CellFormatKind } from '@/types/control'
 import {
   buildDesignGrid,
@@ -35,6 +36,7 @@ import {
   setCellSpan,
 } from '@/core/layout-engine/table-cells'
 import { FONT_CATALOG } from '@/core/fonts/catalog'
+import { useSystemFonts } from '@/core/fonts/system'
 import { useDataSourceStore } from '@/design/stores/dataSource'
 import {
   formatKindOptions,
@@ -69,10 +71,21 @@ const cell = computed<TableCell>(() => grid.value.cells[props.row]?.[props.col] 
 const column = computed(() => props.control.columns[props.col])
 const style = computed<TableCellStyle>(() => resolveCellStyle(props.control, column.value, cell.value))
 
-const fontOptions = [
-  { label: '默认', value: '' },
-  ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
-]
+const sysFonts = useSystemFonts()
+
+const fontOptions = computed<(SelectOption | SelectGroupOption)[]>(() => {
+  const builtin: SelectOption[] = [
+    { label: '默认', value: '' },
+    ...FONT_CATALOG.map((f) => ({ label: f.label, value: f.family })),
+  ]
+  if (!sysFonts.ready.value) return builtin
+  const sysOpts: SelectOption[] = sysFonts.grouped.value.map((g) => ({ label: g.family, value: g.family }))
+  return [
+    { type: 'group', label: '预设字体', key: 'builtin', children: builtin.filter((o) => o.value !== '') },
+    { type: 'group', label: `电脑系统字体（${sysFonts.count.value}）`, key: 'system', children: sysOpts },
+    { label: '默认', value: '' },
+  ]
+})
 
 /**
  * 可绑定字段：
@@ -280,6 +293,7 @@ function deleteCol(): void {
           class="w-24"
           :value="style.fontFamily ?? ''"
           :options="fontOptions"
+          filterable
           @update:value="(v: string) => applyStyle({ fontFamily: v || undefined })"
         />
         <NInputNumber

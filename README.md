@@ -554,6 +554,37 @@ pnpm vitest --coverage
 
 ---
 
+## 赞助支持
+
+OpenPrint 是一个开源项目，如果你觉得它对你有帮助，欢迎赞助支持项目持续研发和维护，扫码请备注，优先获得最新版本维护。
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="screenshots/sponsor-wechat.jpg" width="200" alt="微信赞助码" />
+      <br />
+      <sub>微信赞助</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/sponsor-alipay.jpg" width="200" alt="支付宝赞助码" />
+      <br />
+      <sub>支付宝赞助</sub>
+    </td>
+  </tr>
+</table>
+
+> 将赞助码图片放入 `screenshots/` 目录，替换 `sponsor-wechat.jpg` 和 `sponsor-alipay.jpg` 即可。
+
+### 赞助者名单
+
+感谢以下赞助者的支持（按赞助时间排序）：
+
+| 名称 | 金额 | 日期 |
+|------|------|------|
+| _JiaYang_ | 99 | 2026-08-14 |
+
+---
+
 ## 许可证
 
 [GPL3.0 License](LICENSE)

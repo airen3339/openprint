@@ -79,3 +79,49 @@ html.dark {
   --op-canvas-checker-a: #171A21;
   --op-canvas-checker-b: #1F242D;
 }
+
+/* =========================================================================
+ * NSelect 下拉菜单对比度兜底
+ *
+ * 下拉菜单（.n-base-select-menu）由 naive-ui teleport 到 <body>，脱离了组件
+ * 的 scoped 样式作用域，且其背景/文字色依赖主题 token 经 portal 传递。
+ * 在部分主题接线状态下会出现「浅灰背景 + 深色主题白字」的不可读情况
+ * （背景呈现 #f3f3f5 一类浅灰、文字白到看不见）。
+ *
+ * DOM 结构：.n-base-select-option（wrapper，naive 在这设 color）
+ *          └─ .n-base-select-option__content
+ *               ├─ 标签文本（继承自 wrapper 的 color）
+ *               └─ 勾选图标（独立着色）
+ *
+ * 这里用全局 !important 把菜单背景钉死为表面色、把选项文字（包括 wrapper
+ * 和 content 两个层级）钉死为语义文字色，直接引用 :root / html.dark 上的
+ * --brand-* 变量，保证亮/暗主题下都清晰。
+ * （与 DatabaseExplorer 树形区的 render-label + tree-box 打底同思路。）
+ * ========================================================================= */
+.n-base-select-menu {
+  background-color: var(--brand-surface) !important;
+}
+
+/* 选项文字：wrapper 与 content 都钉死，避免任何一层 color 漏掉 */
+.n-base-select-menu .n-base-select-option,
+.n-base-select-menu .n-base-select-option__content {
+  color: var(--brand-text-1) !important;
+}
+
+/* 选中项：主色强调（wrapper + content 都覆盖） */
+.n-base-select-menu .n-base-select-option--selected,
+.n-base-select-menu .n-base-select-option--selected .n-base-select-option__content {
+  color: var(--brand-primary) !important;
+}
+
+/* hover/pending：保持主文字色（hover 底色仍由 naive 主题 optionColorPending 给） */
+.n-base-select-menu .n-base-select-option--pending,
+.n-base-select-menu .n-base-select-option--pending .n-base-select-option__content {
+  color: var(--brand-text-1) !important;
+}
+
+/* 禁用项：次级文字色 */
+.n-base-select-menu .n-base-select-option--disabled,
+.n-base-select-menu .n-base-select-option--disabled .n-base-select-option__content {
+  color: var(--brand-text-3) !important;
+}

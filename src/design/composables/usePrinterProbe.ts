@@ -15,6 +15,7 @@ import {
   type PrinterInfo,
 } from '@/core/print-client'
 import { resolvePrinterBaseUrl } from '@/config/printer'
+import { useSystemFonts } from '@/core/fonts/system'
 
 /** idle=从未探测 / checking=探测中 / connected=已连接 / disconnected=不可达 */
 export type PrinterProbeState = 'idle' | 'checking' | 'connected' | 'disconnected'
@@ -69,12 +70,16 @@ async function probe(): Promise<boolean> {
       health.value = await checkHealth(base)
       printers.value = await listPrinters(base)
       state.value = 'connected'
+      // 客户端连接成功 → 顺手加载电脑系统字体清单（失败不阻塞连接状态）
+      void useSystemFonts().load().catch(() => {})
       return true
     } catch (e) {
       health.value = null
       printers.value = []
       errorText.value = describePrintError(e)
       state.value = 'disconnected'
+      // 客户端断开 → 清空系统字体（避免下拉里残留客户端不可达的字体）
+      useSystemFonts().clear()
       return false
     } finally {
       checkedAt.value = Date.now()

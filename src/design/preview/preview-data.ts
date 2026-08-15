@@ -58,6 +58,11 @@ function varyValue(field: FieldDef, leaf: string, rowIndex: number): unknown {
 export interface PreviewDataOptions {
   /** 明细数组行数（默认 30，足以在 A4 上撑出多页） */
   rows?: number
+  /**
+   * 真实数据行（数据库模式）：优先级高于 rows 计数。
+   * 给定后，每个数组路径直接填充该批行（按 leaf 字段名映射），不再用 sample 合成。
+   */
+  dataRows?: Array<Record<string, unknown>>
 }
 
 /**
@@ -91,6 +96,18 @@ export function buildPreviewData(
   }
 
   for (const [arrayPath, leaves] of arrays) {
+    // 数据库模式：直接用真实行映射，跳过 sample 合成
+    if (options.dataRows && options.dataRows.length > 0) {
+      const mapped = options.dataRows.map((src) => {
+        const row: Record<string, unknown> = {}
+        for (const { leaf, field } of leaves) {
+          row[leaf] = src[leaf] ?? (field.type === 'number' ? 0 : '')
+        }
+        return row
+      })
+      setPath(data, arrayPath, mapped)
+      continue
+    }
     const rows: Array<Record<string, unknown>> = []
     for (let i = 0; i < rowCount; i++) {
       const row: Record<string, unknown> = {}
