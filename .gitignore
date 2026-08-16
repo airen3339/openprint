@@ -14,6 +14,7 @@ dist-ssr
 coverage
 *.local
 参考资料
+临时
 .workbuddy
 # Editor directories and files
 .vscode/*

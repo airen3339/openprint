@@ -572,9 +572,6 @@ OpenPrint 是一个开源项目，如果你觉得它对你有帮助，欢迎赞�
     </td>
   </tr>
 </table>
-
-> 将赞助码图片放入 `screenshots/` 目录，替换 `sponsor-wechat.jpg` 和 `sponsor-alipay.jpg` 即可。
-
 ### 赞助者名单
 
 感谢以下赞助者的支持（按赞助时间排序）：
