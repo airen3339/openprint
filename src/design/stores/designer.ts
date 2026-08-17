@@ -11,6 +11,7 @@ import { computed, ref, shallowRef } from 'vue'
 import type {
   AnyControl,
   ControlType,
+  LabelGridControl,
   RectControl,
   TableColumn,
   TableControl,
@@ -135,6 +136,13 @@ export const useDesignerStore = defineStore('designer', () => {
   function findControl(id: string): AnyControl | undefined {
     const inBody = controls.value.find((c) => c.id === id)
     if (inBody) return inBody
+    // 标签网格首卡子组件（画布可选中/编辑，属性面板路由到子组件）
+    for (const g of controls.value) {
+      if (g.type === 'labelgrid') {
+        const child = (g as LabelGridControl).children.find((c) => c.id === id)
+        if (child) return child
+      }
+    }
     for (const z of zones.value) {
       if (z.id === id) return z
       const child = z.children.find((c) => c.id === id)
@@ -148,6 +156,19 @@ export const useDesignerStore = defineStore('designer', () => {
     if (i >= 0) {
       controls.value[i] = updated
       return
+    }
+    // 标签网格首卡子组件：替换所属网格 children 中的对应项
+    for (let gi = 0; gi < controls.value.length; gi++) {
+      const g = controls.value[gi]!
+      if (g.type !== 'labelgrid') continue
+      const grid = g as LabelGridControl
+      const ci = (grid.children ?? []).findIndex((c) => c.id === updated.id)
+      if (ci >= 0) {
+        const next = (grid.children ?? []).slice()
+        next[ci] = updated
+        controls.value[gi] = { ...grid, children: next }
+        return
+      }
     }
     for (const z of zones.value) {
       if (z.id === updated.id && updated.type === 'zone') {
@@ -406,6 +427,219 @@ export const useDesignerStore = defineStore('designer', () => {
     dirty.value = true
   }
 
+  /* --------------------------- 标签网格（多列重复） --------------------------- */
+
+  /** 当前选中是否可以「转为标签网格」：至少 1 个正文控件，且不含 zone / 已有网格 */
+  const canMakeLabelGrid = computed(() => {
+    const picked = selectedIds.value
+      .map((id) => controls.value.find((c) => c.id === id))
+      .filter((c): c is AnyControl => !!c)
+    return (
+      picked.length > 0 &&
+      picked.length === selectedIds.value.length &&
+      picked.every((c) => c.type !== 'zone' && c.type !== 'labelgrid')
+    )
+  })
+
+  /**
+   * 把选中的一组控件「转为标签网格」（一张纸平铺 N 张标签的核心入口）。
+   *
+   * 选中的控件被当作**一张卡片模板**：坐标归一到包围盒左上角写进 children，
+   * 原控件从正文移除，替换为一个 labelgrid。标签网格是纯布局组件，不带数据源；
+   * 列数按内容区宽度自动铺满，行数按剩余高度铺满（渲染期多行会自动继续跨页）。
+   */
+  function convertSelectionToLabelGrid(): string | null {
+    const ids = [...selectedIds.value]
+    const picked = ids
+      .map((id) => controls.value.find((c) => c.id === id))
+      .filter((c): c is AnyControl => !!c && c.type !== 'zone' && c.type !== 'labelgrid')
+    if (picked.length === 0) return null
+
+    const r1 = (n: number): number => Math.round(n * 10) / 10
+    const minLeft = r1(Math.min(...picked.map((c) => c.left)))
+    const minTop = r1(Math.min(...picked.map((c) => c.top)))
+    const maxRight = r1(Math.max(...picked.map((c) => c.left + c.width)))
+    const maxBottom = r1(Math.max(...picked.map((c) => c.top + c.height)))
+    const cardWidth = Math.max(1, r1(maxRight - minLeft))
+    const cardHeight = Math.max(1, r1(maxBottom - minTop))
+
+    const snapshot = JSON.parse(JSON.stringify(picked)) as AnyControl[]
+    const children = snapshot.map((c) => ({
+      ...c,
+      left: r1(c.left - minLeft),
+      top: r1(c.top - minTop),
+    }))
+
+    const gap = 3
+    const ps = pageSetup.value
+    const contentWidth = Math.max(1, ps.width - ps.margin.left - ps.margin.right)
+    const contentHeight = Math.max(1, ps.height - ps.margin.top - ps.margin.bottom)
+    const columns = Math.max(1, Math.floor((contentWidth - minLeft + gap) / (cardWidth + gap)))
+    const rows = Math.max(1, Math.floor((contentHeight - minTop + gap) / (cardHeight + gap)))
+
+    const grid: LabelGridControl = {
+      id: genId('lgrid'),
+      type: 'labelgrid',
+      left: minLeft,
+      top: minTop,
+      width: r1(cardWidth * columns + gap * (columns - 1)),
+      height: r1(cardHeight * rows + gap * (rows - 1)),
+      printable: true,
+      columns,
+      gapX: gap,
+      gapY: gap,
+      cardWidth,
+      cardHeight,
+      children,
+      name: `标签网格（${columns} 列）`,
+    }
+
+    // 移除原控件 → 插入网格
+    for (const c of picked) {
+      const i = controls.value.findIndex((x) => x.id === c.id)
+      if (i >= 0) controls.value.splice(i, 1)
+      designer.value?.removeControl(c.id)
+    }
+    controls.value.push(grid)
+    designer.value?.addControl(grid)
+    selectControl(grid.id)
+    dirty.value = true
+
+    const history = useHistoryStore()
+    history.push({
+      undo: () => {
+        const i = controls.value.findIndex((x) => x.id === grid.id)
+        if (i >= 0) controls.value.splice(i, 1)
+        designer.value?.removeControl(grid.id)
+        for (const c of snapshot) {
+          if (!findControl(c.id)) controls.value.push(c)
+          designer.value?.addControl(c)
+        }
+        selectedIds.value = snapshot.map((c) => c.id)
+      },
+      redo: () => {
+        for (const c of snapshot) {
+          const i = controls.value.findIndex((x) => x.id === c.id)
+          if (i >= 0) controls.value.splice(i, 1)
+          designer.value?.removeControl(c.id)
+        }
+        if (!findControl(grid.id)) controls.value.push(grid)
+        designer.value?.addControl(grid)
+        selectControl(grid.id)
+      },
+      description: '转为标签网格',
+    })
+    return grid.id
+  }
+
+  /**
+   * 命中检测：点 (x,y)（相对内容区 mm）落在某个 labelgrid 容器内则返回其 id。
+   * 用于「把控件拖进标签网格首卡」交互——容器即模板，落点决定子组件在首卡中的位置。
+   */
+  function hitLabelGridContainer(x: number, y: number): string | null {
+    for (const c of controls.value) {
+      if (c.type !== 'labelgrid') continue
+      const g = c as LabelGridControl
+      const left = g.left ?? 0
+      const top = g.top ?? 0
+      const right = left + (g.width ?? 0)
+      const bottom = top + (g.height ?? 0)
+      if (x >= left && x <= right && y >= top && y <= bottom) return g.id
+    }
+    return null
+  }
+
+  /** 写回某 labelgrid 的 children 并同步画布（网格位图 + 首卡子对象增删/重定位；不单独记历史，由调用方包 undo/redo） */
+  function setLabelGridChildren(gridId: string, children: AnyControl[]): void {
+    const i = controls.value.findIndex((c) => c.id === gridId)
+    if (i < 0) return
+    const updated = { ...(controls.value[i] as LabelGridControl), children }
+    controls.value.splice(i, 1, updated)
+    const obj = designer.value?.getControlById(gridId) as unknown as
+      | { applyControlProps: (c: AnyControl) => void }
+      | undefined
+    obj?.applyControlProps(updated)
+    // 首卡子组件以真实 Fabric 对象呈现：新增/更新/删除三向同步
+    designer.value?.syncGridChildren(updated)
+    dirty.value = true
+  }
+
+  /**
+   * 把控件库拖入的控件作为「首卡子组件」加入标签网格：
+   * 落点（内容区 mm）换算为首卡相对坐标写进 children，其余卡片在渲染 / 导出时由
+   * expandLabelGrids 自动复制。即「设计第一张 = 设计全部」，预览 / 打印 1:1 复刻。
+   */
+  function addControlIntoLabelGrid(
+    gridId: string,
+    type: ControlType,
+    atAbsolute: { leftMm: number; topMm: number },
+    init?: Partial<AnyControl>,
+  ): void {
+    const cur = controls.value.find((c) => c.id === gridId) as LabelGridControl | undefined
+    if (!cur) return
+    const cardLeft = Math.max(0, atAbsolute.leftMm - (cur.left ?? 0))
+    const cardTop = Math.max(0, atAbsolute.topMm - (cur.top ?? 0))
+    let child = createDefaultControl(type, { leftMm: cardLeft, topMm: cardTop })
+    if (!child) return
+    if (init) child = { ...child, ...init } as AnyControl
+    // 标记归属：作为所属网格的首卡子组件（画布对象 childOf + 模型 childOf 一致）
+    child.childOf = gridId
+    // 圆形默认正圆：宽 = 高
+    if (child.type === 'rect' && (child as RectControl).shape === 'circle') {
+      const r = child as RectControl
+      if (r.width !== r.height) {
+        const size = Math.max(r.width, r.height)
+        r.width = size
+        r.height = size
+      }
+    }
+    // 数据表：高度跟随行高之和（所见即所得）
+    if (child.type === 'table') {
+      const synced = syncDataTableHeight(child as TableControl)
+      if (synced !== child) child = synced as unknown as AnyControl
+    }
+    const prev = cur.children ?? []
+    const next = [...prev, child]
+    setLabelGridChildren(gridId, next)
+    const history = useHistoryStore()
+    history.push({
+      undo: () => setLabelGridChildren(gridId, prev),
+      redo: () => setLabelGridChildren(gridId, next),
+      description: '添加组件到标签网格首卡',
+    })
+    selectControl(gridId)
+  }
+
+  /** 删除首卡中的某个子组件 */
+  function removeLabelGridChild(gridId: string, childId: string): void {
+    const cur = controls.value.find((c) => c.id === gridId) as LabelGridControl | undefined
+    if (!cur) return
+    const prev = cur.children ?? []
+    const next = prev.filter((c) => c.id !== childId)
+    if (next.length === prev.length) return
+    setLabelGridChildren(gridId, next)
+    const history = useHistoryStore()
+    history.push({
+      undo: () => setLabelGridChildren(gridId, prev),
+      redo: () => setLabelGridChildren(gridId, next),
+      description: '删除标签网格子组件',
+    })
+  }
+
+  /** 清空首卡内容（删除所有 children） */
+  function clearLabelGridChildren(gridId: string): void {
+    const cur = controls.value.find((c) => c.id === gridId) as LabelGridControl | undefined
+    if (!cur || (cur.children?.length ?? 0) === 0) return
+    const prev = cur.children ?? []
+    setLabelGridChildren(gridId, [])
+    const history = useHistoryStore()
+    history.push({
+      undo: () => setLabelGridChildren(gridId, prev),
+      redo: () => setLabelGridChildren(gridId, []),
+      description: '清空标签网格首卡',
+    })
+  }
+
   /** 属性面板编辑：更新模型并同步画布 */
   function updateControl(id: string, patch: Partial<AnyControl>): void {
     const current = findControl(id)
@@ -464,6 +698,27 @@ export const useDesignerStore = defineStore('designer', () => {
   }
 
   function removeControl(id: string): void {
+    // 标签网格首卡子组件：从所属网格 children 移除（syncGridChildren 会一并删画布对象）
+    const hostGrid = controls.value.find(
+      (c) => c.type === 'labelgrid' && (c as LabelGridControl).children?.some((ch) => ch.id === id),
+    )
+    if (hostGrid) {
+      const grid = hostGrid as LabelGridControl
+      const child = grid.children?.find((c) => c.id === id)
+      if (!child) return
+      const prev = (grid.children ?? []).slice()
+      const next = prev.filter((c) => c.id !== id)
+      setLabelGridChildren(grid.id, next)
+      if (selectedIds.value.includes(id)) selectedIds.value = []
+      const history = useHistoryStore()
+      history.push({
+        undo: () => setLabelGridChildren(grid.id, prev),
+        redo: () => setLabelGridChildren(grid.id, next),
+        description: `删除 ${child.type}`,
+      })
+      dirty.value = true
+      return
+    }
     const current = findControl(id)
     if (!current) return
     if (editingCell.value?.controlId === id) closeCellEditor()
@@ -496,6 +751,30 @@ export const useDesignerStore = defineStore('designer', () => {
         designer.value?.removeControl(id)
       },
       description: `删除 ${current.type}`,
+    })
+    dirty.value = true
+  }
+
+  /** 调整正文控件层级（解决组件相互覆盖）：dir='up' 上移一层（更靠前/更可见），'down' 下移一层 */
+  function moveControl(id: string, dir: 'up' | 'down'): void {
+    const i = controls.value.findIndex((c) => c.id === id)
+    if (i < 0) return
+    const j = dir === 'up' ? i + 1 : i - 1
+    if (j < 0 || j >= controls.value.length) return
+    const apply = (arr: AnyControl[]) => {
+      controls.value = arr
+      designer.value?.syncZOrder(controls.value.map((c) => c.id))
+    }
+    const before = controls.value.slice()
+    const swapped = before.slice()
+    const [moved] = swapped.splice(i, 1)
+    swapped.splice(j, 0, moved!)
+    apply(swapped)
+    const history = useHistoryStore()
+    history.push({
+      undo: () => apply(before.slice()),
+      redo: () => apply(swapped.slice()),
+      description: `调整层级 ${dir === 'up' ? '上移' : '下移'}`,
     })
     dirty.value = true
   }
@@ -825,10 +1104,17 @@ export const useDesignerStore = defineStore('designer', () => {
     addControlOfType,
     importTable,
     addZone,
+    canMakeLabelGrid,
+    convertSelectionToLabelGrid,
+    hitLabelGridContainer,
+    addControlIntoLabelGrid,
+    removeLabelGridChild,
+    clearLabelGridChildren,
     updateControl,
     updateControlSilent,
     reflowBody,
     removeControl,
+    moveControl,
     selectControl,
     buildTemplate,
     markSaved,
@@ -969,5 +1255,29 @@ function createDefaultControl(
         penWidth: 1,
         color: '#000000',
       }
+    case 'labelgrid': {
+      // 起手是一个**空网格**：列数 / 间距 / 卡片尺寸给合理默认值，内容由用户自行放入
+      // （框选一组控件「转为标签网格」，或从控件库拖入后编辑首卡）。标签网格是纯布局组件，
+      // 不带数据源——每张卡印什么由放进卡里的其他数据组件决定。
+      const cardW = 58
+      const cardH = 30
+      const cols = 3
+      const gap = 3
+      const rows = 3
+      return {
+        ...base,
+        type,
+        width: cardW * cols + gap * (cols - 1),
+        height: cardH * rows + gap * (rows - 1),
+        columns: cols,
+        gapX: gap,
+        gapY: gap,
+        cardWidth: cardW,
+        cardHeight: cardH,
+        showLines: true,
+        children: [],
+        name: `标签网格（${cols} 列）`,
+      }
+    }
   }
 }

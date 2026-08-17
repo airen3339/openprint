@@ -57,6 +57,17 @@ export function useDragAdd(stageRef: Ref<HTMLElement | null>): void {
     // 默认正文区原点 = 内容区左上角 + 页眉高（与渲染端 .op_body 起算点一致）
     let origin = { x: d.contentOriginPx.x / MM_TO_PX, y: d.contentOriginPx.y / MM_TO_PX }
 
+    // 落点（相对内容区 mm）——既用于区域命中，也用于标签网格首卡命中
+    const dropLeft = pageMmX - origin.x
+    const dropTop = pageMmY - origin.y
+
+    // 拖入标签网格容器：作为「首卡子组件」加入，渲染 / 导出时由引擎自动复制（容器即模板）
+    const gridId = store.hitLabelGridContainer(dropLeft, dropTop)
+    if (gridId && type !== 'signature') {
+      store.addControlIntoLabelGrid(gridId, type, { leftMm: dropLeft, topMm: dropTop }, init)
+      return
+    }
+
     for (const z of d.getZones()) {
       const b = z.getBoundingRect()
       // 将 zone 画布坐标转为 stage-container px

@@ -18,6 +18,8 @@ export interface IPrintObject {
   controlType: ControlType
   /** 所属区域：body 或某个 zone 的 controlId */
   zoneId?: string
+  /** 所属标签网格（labelgrid）controlId：作为其首卡子组件存在（设计期可移动/编辑） */
+  childOf?: string
   toControl(): AnyControl
   // 参数声明为 AnyControl（方法双变允许各子类收窄为自己的控件类型）
   applyControlProps(control: AnyControl): void

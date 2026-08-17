@@ -302,6 +302,22 @@ html, body {
   transform-origin: left top;
 }
 
+/* 标签网格参考线：与 .op-node 同一坐标原点（.op-content 左上角），
+   若无 position:absolute 会按文档流竖排成一列，造成「网格线挤成一列」的视觉 bug */
+.op-gridlines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.op-gridline {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
 .op-text {
   overflow: hidden;
   white-space: pre-wrap;

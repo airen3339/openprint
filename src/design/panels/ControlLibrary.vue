@@ -19,6 +19,7 @@ interface ControlItem {
     | 'condblock'
     | 'datablock'
     | 'circle'
+    | 'labelgrid'
   label: string
   icon: string
   disabled?: boolean
@@ -54,6 +55,7 @@ const categories: Category[] = [
       { type: 'zone-header', label: '页眉', icon: 'i-carbon-row' },
       { type: 'zone-footer', label: '页脚', icon: 'i-carbon-row' },
       { type: 'pageno', label: '页码', icon: 'i-carbon-page-number' },
+      { type: 'labelgrid', label: '标签网格', icon: 'i-carbon-grid' },
     ],
   },
   {
@@ -134,6 +136,9 @@ function onClick(item: ControlItem): void {
   } else if (item.type === 'signature') {
     // 签名：打开弹出式手写画板（WPS 式），确认后插入主画布
     store.openSignaturePad()
+  } else if (item.type === 'labelgrid') {
+    // 标签网格：点击插入一张默认 3 列商品标签（拖拽同理，走 startControlDrag）
+    store.addControlOfType('labelgrid', { leftMm: 60, topMm: 60 })
   }
 }
 </script>

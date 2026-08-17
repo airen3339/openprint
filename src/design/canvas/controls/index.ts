@@ -16,6 +16,7 @@ import { PrintRichText } from './PrintRichText'
 import { PrintChart } from './PrintChart'
 import { PrintMath } from './PrintMath'
 import { PrintSignature } from './PrintSignature'
+import { PrintLabelGrid } from './PrintLabelGrid'
 import type { IPrintObject } from './PrintObject'
 
 export {
@@ -32,6 +33,7 @@ export {
   PrintChart,
   PrintMath,
   PrintSignature,
+  PrintLabelGrid,
 }
 export { isPrintObject, type IPrintObject } from './PrintObject'
 
@@ -79,6 +81,8 @@ export function createFabricControl(
       return new PrintZone(control, page.widthMm, page.heightMm, page.marginLeftMm, page.marginRightMm)
     case 'richtext':
       return new PrintRichText(control)
+    case 'labelgrid':
+      return new PrintLabelGrid(control)
   }
 }
 
@@ -96,4 +100,5 @@ export const CONTROL_TYPE_LABEL: Record<string, string> = {
   chart: '图表',
   math: '公式',
   signature: '签名',
+  labelgrid: '标签网格',
 }

@@ -114,6 +114,22 @@ export type PlacedNode = PlacedControl | PlacedTable
 
 /* --------------------------------- 页 --------------------------------- */
 
+/**
+ * 标签网格参考线（渲染期装饰层，非真实控件）。
+ * 坐标 mm，相对该页「内容区左上角」（与 PlacedNode 同一坐标系），
+ * 由分页引擎在展开标签网格时按页算出，保证设计画布与预览/导出像素级一致（所见即所得）。
+ */
+export interface GridLine {
+  /** 左（mm，内容区绝对 X，无页偏移） */
+  left: number
+  /** 上（mm，相对所在页内容区顶，非跨页绝对坐标） */
+  top: number
+  width: number
+  height: number
+  /** true=实线 false=虚线 */
+  solid: boolean
+}
+
 export interface LayoutPage {
   /** 0-based 索引 */
   index: number
@@ -122,6 +138,8 @@ export interface LayoutPage {
   header: PlacedControl[]
   body: PlacedNode[]
   footer: PlacedControl[]
+  /** 标签网格参考线（容器 + 卡片边框），按页切分，设计即打印 */
+  gridLines?: GridLine[]
 }
 
 /* -------------------------------- 页面度量 ------------------------------- */

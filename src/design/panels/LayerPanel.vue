@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /**
- * LayerPanel —— 图层面板：展示画布控件列表（z-order，可选中/删除）
+ * LayerPanel —— 图层面板：展示画布控件列表（z-order），可选中 / 删除 / 上下移动。
+ *
+ * 列表顺序以设计模型（store.controls）为真理源：末尾 = 最上层。图层面板上下移动
+ * 直接重排模型并同步画布 z-order 与渲染输出，做到「画布设计什么样，预览/打印就什么样」。
  */
 import { computed } from 'vue'
 import { NButton, NScrollbar } from 'naive-ui'
@@ -9,39 +12,37 @@ import { CONTROL_TYPE_LABEL } from '@/design/canvas/controls'
 
 const store = useDesignerStore()
 
-/** 按画布 z-order 排列（body + zones + zone children） */
+/** 图层列表：zone（页眉/页脚）固定在最底，正文控件按模型顺序倒序（最上层在前） */
 const layers = computed(() => {
-  // 从 designer 对象获取实际顺序（Fabric objects 有固有 z-index）
-  const objs = store.designer?.getPrintObjects() ?? []
-  const ids = objs.map((o) => o.controlId)
-  const all: Array<{ id: string; type: string; name: string }> = []
-  const seen = new Set<string>()
-  for (const id of ids) {
-    if (seen.has(id)) continue
-    seen.add(id)
-    const c = store.controls.find((x) => x.id === id) ??
-      store.zones.find((x) => x.id === id || x.children.some((ch) => ch.id === id))
-    let entry: { id: string; type: string; name: string } | undefined
-    if (store.zones.find((x) => x.id === id)) {
-      const z = store.zones.find((x) => x.id === id)!
-      entry = { id: z.id, type: 'zone', name: z.zone === 'header' ? '页眉区域' : '页脚区域' }
-    } else if (store.controls.find((x) => x.id === id)) {
-      const c = store.controls.find((x) => x.id === id)!
-      entry = { id: c.id, type: c.type, name: c.name ?? CONTROL_TYPE_LABEL[c.type] ?? c.type }
-    } else {
-      // zone child
-      for (const z of store.zones) {
-        const child = z.children.find((ch) => ch.id === id)
-        if (child) {
-          entry = { id: child.id, type: child.type, name: child.name ?? (CONTROL_TYPE_LABEL[child.type] ?? child.type) }
-          break
-        }
-      }
-    }
-    if (entry) all.push(entry)
+  const list: Array<{ id: string; type: string; name: string; isZone: boolean }> = []
+  for (const z of store.zones) {
+    list.push({
+      id: z.id,
+      type: 'zone',
+      name: z.zone === 'header' ? '页眉区域' : '页脚区域',
+      isZone: true,
+    })
   }
-  return all
+  for (let i = store.controls.length - 1; i >= 0; i--) {
+    const c = store.controls[i]!
+    list.push({
+      id: c.id,
+      type: c.type,
+      name: c.name ?? CONTROL_TYPE_LABEL[c.type] ?? c.type,
+      isZone: false,
+    })
+  }
+  return list
 })
+
+/** 某正文控件在模型数组中的下标（用于判断能否继续上/下移） */
+function modelIndex(id: string): number {
+  return store.controls.findIndex((c) => c.id === id)
+}
+
+function move(id: string, dir: 'up' | 'down'): void {
+  store.moveControl(id, dir)
+}
 </script>
 
 <template>
@@ -59,14 +60,36 @@ const layers = computed(() => {
           @click="store.selectControl(layer.id)"
         >
           <span class="truncate text-12px">{{ layer.name }}</span>
-          <NButton
-            text
-            size="tiny"
-            class="opacity-0 group-hover:opacity-100"
-            @click.stop="store.removeControl(layer.id)"
-          >
-            <div class="i-carbon-close text-12px text-brand-text-3" />
-          </NButton>
+          <div class="layer-actions">
+            <template v-if="!layer.isZone">
+              <NButton
+                text
+                size="tiny"
+                class="opacity-0 group-hover:opacity-100"
+                :disabled="modelIndex(layer.id) >= store.controls.length - 1"
+                @click.stop="move(layer.id, 'up')"
+              >
+                <div class="i-carbon-arrow-up text-12px text-brand-text-3" />
+              </NButton>
+              <NButton
+                text
+                size="tiny"
+                class="opacity-0 group-hover:opacity-100"
+                :disabled="modelIndex(layer.id) <= 0"
+                @click.stop="move(layer.id, 'down')"
+              >
+                <div class="i-carbon-arrow-down text-12px text-brand-text-3" />
+              </NButton>
+            </template>
+            <NButton
+              text
+              size="tiny"
+              class="opacity-0 group-hover:opacity-100"
+              @click.stop="store.removeControl(layer.id)"
+            >
+              <div class="i-carbon-close text-12px text-brand-text-3" />
+            </NButton>
+          </div>
         </div>
       </div>
     </NScrollbar>
@@ -88,5 +111,10 @@ const layers = computed(() => {
 .layer-item.selected {
   background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
   color: var(--brand-primary);
+}
+.layer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 </style>

@@ -39,6 +39,13 @@ import {
 } from './table-engine'
 import { isDataTable } from './table-cells'
 import {
+  bodyStepMm,
+  expandLabelGrids,
+  withRowCtx,
+  type GridLinePlacement,
+  type RowCtxMap,
+} from './label-grid'
+import {
   MAX_PAGES,
   type EvalContext,
   type LayoutPage,
@@ -73,13 +80,19 @@ interface BodyPlan {
   below: AnyControl[]
 }
 
-function analyzeBody(components: AnyControl[], unit: PageSetup['unit']): {
+function analyzeBody(
+  components: AnyControl[],
+  unit: PageSetup['unit'],
+  /** 标签网格展开出来的控件不参与「流式表格」候选（卡片内的表格只能整表渲染） */
+  generated?: { has(id: string): boolean },
+): {
   plan: BodyPlan
   warnings: RenderWarning[]
 } {
   const warnings: RenderWarning[] = []
   const tables = components.filter(
-    (c): c is TableControl => c.type === 'table' && isDataTable(c),
+    (c): c is TableControl =>
+      c.type === 'table' && isDataTable(c) && !(generated?.has(c.id) ?? false),
   )
 
   if (tables.length > 1) {
@@ -121,18 +134,23 @@ async function placeControls(
   ctx: EvalContext,
   unit: PageSetup['unit'],
   topShift = 0,
+  rowCtx?: RowCtxMap,
 ): Promise<{ placed: PlacedControl[]; warnings: RenderWarning[] }> {
   const placed: PlacedControl[] = []
   const warnings: RenderWarning[] = []
 
   for (const control of components) {
     if (control.type === 'zone') continue
-    if (!isControlPrintable(control, ctx)) continue
+    // labelgrid 已在入口展开为普通控件，正常路径不会再遇到
+    if (control.type === 'labelgrid') continue
+    // 标签卡片内的控件按所属卡片的行上下文求值（items[].xxx → row.xxx）
+    const cctx = withRowCtx(control.id, ctx, rowCtx)
+    if (!isControlPrintable(control, cctx)) continue
 
     // 静态表格（布局网格 / 非流动表格）在这里整体渲染
     if (control.type === 'table') continue
 
-    const { content, warnings: w } = await resolveControlContent(control, ctx)
+    const { content, warnings: w } = await resolveControlContent(control, cctx)
     warnings.push(...w)
     placed.push({
       kind: 'control',
@@ -158,17 +176,19 @@ function placeStaticTables(
   unit: PageSetup['unit'],
   measurer: TextMeasurer,
   topShift = 0,
+  rowCtx?: RowCtxMap,
 ): { placed: PlacedTable[]; warnings: RenderWarning[] } {
   const placed: PlacedTable[] = []
   const warnings: RenderWarning[] = []
 
   for (const control of components) {
     if (control.type !== 'table' || control.id === flowTableId) continue
-    if (!isControlPrintable(control, ctx)) continue
+    const cctx = withRowCtx(control.id, ctx, rowCtx)
+    if (!isControlPrintable(control, cctx)) continue
 
     const widthMm = toMm(control.width, unit)
     const heightMm = toMm(control.height, unit)
-    const model = buildTableModel({ control, ctx, measurer, widthMm, heightMm })
+    const model = buildTableModel({ control, ctx: cctx, measurer, widthMm, heightMm })
     warnings.push(...model.warnings)
     placed.push({
       kind: 'table',
@@ -342,9 +362,28 @@ export async function layout(
   const metrics = computePageMetrics(doc.page, headerSection, footerSection)
   const baseCtx: EvalContext = { data }
 
-  const bodyComponents = bodySection?.components ?? []
-  const { plan, warnings: planWarnings } = analyzeBody(bodyComponents, unit)
+  /* ── 前置：标签网格展开为绝对定位的普通控件（卡片不跨页） ── */
+  const expansion = expandLabelGrids(
+    bodySection?.components ?? [],
+    baseCtx,
+    unit,
+    bodyStepMm(metrics),
+    maxPages,
+  )
+  warnings.push(...expansion.warnings)
+  const bodyComponents = expansion.components
+  const rowCtx = expansion.rowCtx
+
+  const { plan, warnings: planWarnings } = analyzeBody(bodyComponents, unit, rowCtx)
   warnings.push(...planWarnings)
+
+  if (expansion.expanded && plan.flowTable) {
+    warnings.push({
+      code: 'CONTENT_OVERFLOW',
+      message: '正文同时存在标签网格与流式明细表格，两者分页规则不同，建议拆成两个模板',
+      controlId: plan.flowTable.id,
+    })
+  }
 
   /* ── 情况 A：无流式表格 → 按位置切页 ── */
   if (!plan.flowTable) {
@@ -356,6 +395,7 @@ export async function layout(
       measurer,
       maxPages,
       warnings,
+      rowCtx,
     )
     const pages = await buildPages(
       staticPages.length,
@@ -366,6 +406,7 @@ export async function layout(
       unit,
       warnings,
     )
+    attachGridLines(pages, expansion.gridLines)
     return { pages, metrics, page: doc.page, warnings: dedupeWarnings(warnings) }
   }
 
@@ -427,7 +468,13 @@ export async function layout(
 
   // 第 1 页：表格上方 + 重叠控件 + 静态表格
   const firstCtx: EvalContext = { ...baseCtx, page: 1, pages: totalPages }
-  const firstControls = await placeControls([...plan.above, ...plan.overlap], firstCtx, unit)
+  const firstControls = await placeControls(
+    [...plan.above, ...plan.overlap],
+    firstCtx,
+    unit,
+    0,
+    rowCtx,
+  )
   warnings.push(...firstControls.warnings)
   for (const c of firstControls.placed) pushNode(0, c)
 
@@ -437,6 +484,8 @@ export async function layout(
     firstCtx,
     unit,
     measurer,
+    0,
+    rowCtx,
   )
   warnings.push(...staticTables.warnings)
   for (const t of staticTables.placed) pushNode(0, t)
@@ -445,10 +494,11 @@ export async function layout(
   if (plan.below.length > 0) {
     const belowCtx: EvalContext = { ...baseCtx, page: lastPageNo, pages: totalPages }
     for (const { control, delta } of belowOffsets) {
-      if (control.type === 'zone') continue
-      if (!isControlPrintable(control, belowCtx)) continue
+      if (control.type === 'zone' || control.type === 'labelgrid') continue
+      const cctx = withRowCtx(control.id, belowCtx, rowCtx)
+      if (!isControlPrintable(control, cctx)) continue
       if (control.type === 'table') continue
-      const { content, warnings: w } = await resolveControlContent(control, belowCtx)
+      const { content, warnings: w } = await resolveControlContent(control, cctx)
       warnings.push(...w)
       pushNode(belowPageIndex, {
         kind: 'control',
@@ -470,6 +520,7 @@ export async function layout(
       unit,
       measurer,
       belowBaseTop - tableBottom,
+      rowCtx,
     )
     warnings.push(...belowStatic.warnings)
     for (const t of belowStatic.placed) pushNode(belowPageIndex, t)
@@ -485,6 +536,7 @@ export async function layout(
     unit,
     warnings,
   )
+  attachGridLines(pages, expansion.gridLines)
 
   return { pages, metrics, page: doc.page, warnings: dedupeWarnings(warnings) }
 }
@@ -503,8 +555,9 @@ async function layoutStaticOnly(
   measurer: TextMeasurer,
   maxPages: number,
   warnings: RenderWarning[],
+  rowCtx?: RowCtxMap,
 ): Promise<PlacedNode[][]> {
-  const bodyH = Math.max(1, metrics.pageHeight - metrics.margin.top)
+  const bodyH = bodyStepMm(metrics)
 
   // 控件按 top 落在第几个 bodyHeight 区间就进第几页。
   // 分页步长 = 页高 - 上边距（含下边距区）：正文控件可自由落进下边距（边距只作设计辅助），
@@ -525,9 +578,9 @@ async function layoutStaticOnly(
   for (const [idx, list] of buckets) {
     const ctx: EvalContext = { ...baseCtx, page: idx + 1, pages: totalPages }
     const shift = -idx * bodyH
-    const { placed, warnings: w } = await placeControls(list, ctx, unit, shift)
+    const { placed, warnings: w } = await placeControls(list, ctx, unit, shift, rowCtx)
     warnings.push(...w)
-    const tables = placeStaticTables(list, null, ctx, unit, measurer, shift)
+    const tables = placeStaticTables(list, null, ctx, unit, measurer, shift, rowCtx)
     warnings.push(...tables.warnings)
     bodyByPage.set(idx, [...placed, ...tables.placed])
   }
@@ -536,6 +589,14 @@ async function layoutStaticOnly(
 }
 
 /* ------------------------------ 页眉页脚注入 ------------------------------ */
+
+/** 把标签网格参考线按页索引贴回 LayoutPage.gridLines（坐标已是 page-relative） */
+function attachGridLines(pages: LayoutPage[], lines: GridLinePlacement[]): void {
+  for (const { pageIndex, line } of lines) {
+    const page = pages[pageIndex]
+    if (page) (page.gridLines ??= []).push(line)
+  }
+}
 
 async function buildPages(
   totalPages: number,

@@ -80,7 +80,7 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "enum": ["text", "image", "table", "barcode", "qrcode", "richtext", "rect", "line", "chart", "math", "signature", "zone"]
+          "enum": ["text", "image", "table", "barcode", "qrcode", "richtext", "rect", "line", "chart", "math", "signature", "zone", "labelgrid"]
         },
         "left": { "type": "number" },
         "top": { "type": "number" },

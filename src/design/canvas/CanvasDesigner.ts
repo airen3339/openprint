@@ -8,7 +8,7 @@
  * - 协议层坐标：body 控件相对"页边距内容区"左上角；zone 子控件相对色带左上角（§5.14.2）
  */
 import { Canvas, Rect, Line, Point, FabricObject, Text, Pattern, type TPointerEventInfo } from 'fabric'
-import type { AnyControl, ZoneControl } from '@/types/control'
+import type { AnyControl, LabelGridControl, ZoneControl } from '@/types/control'
 import type { PageSetup, WatermarkConfig } from '@/types/template'
 import { MM_TO_PX, ZOOM_MAX, ZOOM_MIN } from '@/utils/constants'
 import { toMm } from '@/core/units'
@@ -580,8 +580,62 @@ export class CanvasDesigner {
     // 镜像「常驻辅助线」开关到 Fabric 对象，供 SmartGuides 读取
     ;(obj as unknown as { showGuides: boolean }).showGuides = control.showGuides ?? false
     this.canvas.add(obj)
+    // 标签网格：首卡子组件以真实 Fabric 对象渲染（可选中/拖动/编辑，所见即所得）
+    if (control.type === 'labelgrid') {
+      this.syncGridChildren(control as LabelGridControl)
+    }
     if (opts.select ?? true) this.canvas.setActiveObject(obj)
     this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  /**
+   * 同步标签网格的「首卡子组件」为真实 Fabric 对象（建/改/删三向）。
+   *
+   * - 新增：按模型（卡内相对坐标 + 网格左上角）创建子对象，标记 `childOf = grid.id`；
+   * - 已存在：走 `updateControl` 按模型刷新几何与属性；
+   * - 模型已删除：从画布移除。
+   *
+   * 子对象位于网格位图之上，可像普通控件一样选中 / 拖动 / 缩放 / 删除，
+   * 拖动结束由 `readControl` 把卡内相对坐标写回模型 → 预览 / 导出逐卡复刻。
+   */
+  syncGridChildren(grid: LabelGridControl): void {
+    const gridObj = this.getControlById(grid.id)
+    if (!gridObj || gridObj.controlType !== 'labelgrid') return
+    const existing = new Map(
+      this.getPrintObjects()
+        .filter((o) => o.childOf === grid.id)
+        .map((o) => [o.controlId, o] as const),
+    )
+    const page = {
+      widthMm: this.pageWidthMm,
+      heightMm: this.pageHeightMm,
+      marginLeftMm: this.marginMm.left,
+      marginRightMm: this.marginMm.right,
+    }
+    for (const child of grid.children ?? []) {
+      if (child.type === 'zone' || child.type === 'labelgrid') continue
+      const cobj = existing.get(child.id)
+      if (cobj) {
+        // 已存在：按模型（卡内相对坐标 + childOf）重定位/刷属性
+        this.updateControl({ ...child, childOf: grid.id } as AnyControl)
+      } else {
+        // 新增：绝对坐标 = 网格左上角 + 卡内相对坐标
+        const absChild: AnyControl = {
+          ...child,
+          left: (grid.left ?? 0) + (child.left ?? 0),
+          top: (grid.top ?? 0) + (child.top ?? 0),
+        }
+        const obj = createFabricControl(absChild, page)
+        this.applySectionOrigin(obj, absChild)
+        ;(obj as unknown as { showGuides: boolean }).showGuides = false
+        ;(obj as IPrintObject).childOf = grid.id
+        this.canvas.add(obj)
+      }
+    }
+    for (const [cid, obj] of existing) {
+      if (!(grid.children ?? []).some((c) => c.id === cid)) this.canvas.remove(obj)
+    }
     this.canvas.requestRenderAll()
   }
 
@@ -590,6 +644,24 @@ export class CanvasDesigner {
     for (const obj of this.getPrintObjects()) this.canvas.remove(obj)
     this.canvas.discardActiveObject()
     this.refreshPages()
+    this.canvas.requestRenderAll()
+  }
+
+  /**
+   * 按给定 id 顺序（bottom→top）重排正文控件的 z-order，使画布与设计模型 / 预览一致。
+   * 仅重排列出的 body 控件，页眉/页脚色带（zone）保持原位。所见即所得：图层面板上下
+   * 移动即同步到画布与渲染输出。
+   */
+  syncZOrder(orderedIds: string[]): void {
+    const all = this.canvas.getObjects()
+    const firstPrint = all.findIndex(isPrintObject)
+    const base = firstPrint >= 0 ? firstPrint : 0
+    const byId = new Map(this.getPrintObjects().map((o) => [o.controlId, o]))
+    let i = 0
+    for (const id of orderedIds) {
+      const obj = byId.get(id)
+      if (obj) this.canvas.moveObjectTo(obj, base + i++)
+    }
     this.canvas.requestRenderAll()
   }
 
@@ -624,12 +696,24 @@ export class CanvasDesigner {
     if (!obj) return
     if (control.type !== 'zone') {
       // 几何同步：协议 mm（相对内容区/所属色带）→ 画布绝对 px（含页间距）
-      const origin = this.originFor(obj)
-      obj.set({
-        left: origin.x + control.left * MM_TO_PX,
-        top: origin.y + control.top * MM_TO_PX + (obj instanceof PrintZone ? 0 : this.gapPx(control.top)),
-        angle: control.angle ?? 0,
-      })
+      if (control.childOf) {
+        // 标签网格首卡子组件：相对所属网格左上角（读回模型时 readControl 反向换算）
+        const gridObj = this.getControlById(control.childOf)
+        if (gridObj) {
+          obj.set({
+            left: (gridObj.left ?? 0) + control.left * MM_TO_PX,
+            top: (gridObj.top ?? 0) + control.top * MM_TO_PX,
+            angle: control.angle ?? 0,
+          })
+        }
+      } else {
+        const origin = this.originFor(obj)
+        obj.set({
+          left: origin.x + control.left * MM_TO_PX,
+          top: origin.y + control.top * MM_TO_PX + (obj instanceof PrintZone ? 0 : this.gapPx(control.top)),
+          angle: control.angle ?? 0,
+        })
+      }
       if (obj instanceof PrintText) {
         // 文本框：直接改宽度重排文字，不缩放字形
         obj.set({ width: control.width * MM_TO_PX, scaleX: 1, scaleY: 1 })
@@ -645,6 +729,8 @@ export class CanvasDesigner {
     ;(obj as IPrintObject).applyControlProps(control)
     // 同步「常驻辅助线」开关到 Fabric 对象（控制面板实时切换即生效）
     ;(obj as unknown as { showGuides: boolean }).showGuides = control.showGuides ?? false
+    // 网格几何/位置变化 → 首卡子组件按模型重新锚定（跟随网格移动/重排）
+    if (control.type === 'labelgrid') this.syncGridChildren(control as LabelGridControl)
     this.refreshPages()
     this.canvas.requestRenderAll()
   }
@@ -686,6 +772,20 @@ export class CanvasDesigner {
     const left = rel(abs(obj.left), origin.x)
     // body 控件反解页间距（zone 子控件相对色带，间距恒为 0）
     const top = host ? rel(abs(obj.top), origin.y) : Math.round(this.yToModelTop(abs(obj.top)) * 100) / 100
+    // 标签网格首卡子组件：坐标归一为「相对所属网格左上角」（卡内 mm），并携带 childOf 标记
+    if (obj.childOf) {
+      const gridObj = this.getControlById(obj.childOf)
+      if (gridObj) {
+        const cLeft = rel(abs(obj.left), this.contentOriginPx.x)
+        const cTop = Math.round(this.yToModelTop(abs(obj.top)) * 100) / 100
+        const gLeft = rel(abs(gridObj.left), this.contentOriginPx.x)
+        const gTop = Math.round(this.yToModelTop(abs(gridObj.top)) * 100) / 100
+        control.left = Math.round((cLeft - gLeft) * 100) / 100
+        control.top = Math.round((cTop - gTop) * 100) / 100
+        control.childOf = obj.childOf
+      }
+      return control
+    }
     // 色带子控件不允许溢出到色带上方/左侧
     control.left = host ? Math.max(0, left) : left
     control.top = host ? Math.max(0, top) : top
@@ -695,6 +795,12 @@ export class CanvasDesigner {
   removeControl(id: string): void {
     const obj = this.getControlById(id)
     if (!obj) return
+    // 删除标签网格时级联删除其首卡子对象
+    if (obj.controlType === 'labelgrid') {
+      for (const c of this.getPrintObjects()) {
+        if (c.childOf === id) this.canvas.remove(c)
+      }
+    }
     this.canvas.remove(obj)
     this.canvas.discardActiveObject()
     this.refreshPages()
@@ -721,17 +827,32 @@ export class CanvasDesigner {
     const zones = this.getZones()
     const zoneControls: ZoneControl[] = zones.map((z) => z.toControl())
     const body: AnyControl[] = []
+    // 标签网格首卡子组件按所属网格收集（画布为真理源，序列化时重建 children）
+    const childrenByGrid = new Map<string, AnyControl[]>()
 
     for (const obj of this.getPrintObjects()) {
       if (obj instanceof PrintZone) continue
       // readControl 已把几何归一化到「相对色带 / 相对内容区」
       const control = this.readControl(obj)
+      if (control.childOf) {
+        const arr = childrenByGrid.get(control.childOf) ?? []
+        arr.push(control)
+        childrenByGrid.set(control.childOf, arr)
+        continue
+      }
       const host = this.hostZoneOf(obj)
       if (host) {
         const zc = zoneControls.find((z) => z.zone === host.zone)
         zc?.children.push(control)
       } else {
         body.push(control)
+      }
+    }
+
+    // 网格的 children 以画布子对象为准（避免模型快照与画布状态漂移）
+    for (const c of body) {
+      if (c.type === 'labelgrid') {
+        c.children = childrenByGrid.get(c.id) ?? []
       }
     }
     return { body, zones: zoneControls }
@@ -819,11 +940,40 @@ export class CanvasDesigner {
 
     // 对象变换 / 视口变化 → 驱动表格 HTML overlay 重定位
     const bump = () => this.events.onTransformTick?.()
+    // 拖拽起点快照（网格拖动时用增量移动首卡子对象）
+    c.on('mouse:down', (opt) => {
+      const t = opt.target
+      if (t) (t as { __prevPos?: { left: number; top: number } }).__prevPos = { left: t.left ?? 0, top: t.top ?? 0 }
+    })
     // 边距锁定：正文控件移动时钳制在内容区内（页眉/页脚色带自身锁定位置，其子控件在边距区不受限）
     c.on('object:moving', (e) => {
       const obj = e.target
-      if (this.marginLocked && obj && isPrintObject(obj) && !(obj instanceof PrintZone) && !obj.zoneId) {
-        this.clampToContentArea(obj)
+      if (obj && isPrintObject(obj)) {
+        if (this.marginLocked && !(obj instanceof PrintZone) && !obj.zoneId) {
+          this.clampToContentArea(obj)
+        }
+        // 标签网格整体拖动 → 首卡子对象按同一增量跟随（所见即所得）
+        if (obj.controlType === 'labelgrid') {
+          const prev =
+            (obj as { __prevPos?: { left: number; top: number } }).__prevPos ?? {
+              left: obj.left ?? 0,
+              top: obj.top ?? 0,
+            }
+          const dx = (obj.left ?? 0) - prev.left
+          const dy = (obj.top ?? 0) - prev.top
+          if (dx || dy) {
+            for (const child of this.getPrintObjects()) {
+              if (child.childOf === obj.controlId) {
+                child.set({ left: (child.left ?? 0) + dx, top: (child.top ?? 0) + dy })
+                child.setCoords()
+              }
+            }
+            ;(obj as { __prevPos?: { left: number; top: number } }).__prevPos = {
+              left: obj.left ?? 0,
+              top: obj.top ?? 0,
+            }
+          }
+        }
       }
       bump()
     })

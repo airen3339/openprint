@@ -28,6 +28,7 @@ import RichTextProps from '@/design/panels/props/RichTextProps.vue'
 import ChartProps from '@/design/panels/props/ChartProps.vue'
 import MathProps from '@/design/panels/props/MathProps.vue'
 import SignatureProps from '@/design/panels/props/SignatureProps.vue'
+import LabelGridProps from '@/design/panels/props/LabelGridProps.vue'
 
 const store = useDesignerStore()
 const control = computed(() => store.selectedControl)
@@ -56,6 +57,8 @@ const propsComponent = computed<Component | null>(() => {
       return MathProps
     case 'signature':
       return SignatureProps
+    case 'labelgrid':
+      return LabelGridProps
     default:
       return null
   }

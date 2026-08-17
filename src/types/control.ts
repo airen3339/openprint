@@ -20,6 +20,7 @@ export type ControlType =
   | 'math'
   | 'signature'
   | 'zone'
+  | 'labelgrid'
 
 /** 全部控件的公共基座（§5.4a：printable 为通用属性） */
 export interface ControlBase {
@@ -43,6 +44,11 @@ export interface ControlBase {
   name?: string
   /** 常驻辅助线：开启后该元素 4 条边界辅助线始终显示（不限于拖拽时） */
   showGuides?: boolean
+  /**
+   * 所属标签网格（labelgrid）controlId：作为其「首卡子组件」存在。
+   * 仅设计期内部标记（画布序列化回环用），协议渲染时被 expandLabelGrids 摊平，不参与输出。
+   */
+  childOf?: string
 }
 
 /* ---------------------------------- 文本 ---------------------------------- */
@@ -434,6 +440,40 @@ export interface ZoneControl extends ControlBase {
   children: AnyControl[]
 }
 
+/* ------------------------------ 标签网格（多列重复） ------------------------------ */
+
+/**
+ * LabelGridControl（标签网格 / 多列重复控件）——《OpenPrint-设计方案》新增。
+ *
+ * **纯布局组件**：一张纸上平铺很多张相同的「标签卡」（地址标签、资产贴纸、价签等）。
+ * 它只负责把「一张卡片模板」（children）按 列数 × 行数 重复平铺、跨页自洽；
+ * **本身不带数据源**——每张卡要印什么数据，由放进卡片里的「其他数据组件」负责
+ * （数据源是其他组件的事）。
+ *
+ * 设计：用户在画布上正常设计「一张卡片」（含图片/文本/条码/二维码等），框选这组控件
+ * →「转为标签网格」，坐标被归一到卡片左上角，生成本控件。也可从控件库拖入空网格后
+ * 再把组件放进去。行数由容器高度推导（属性面板「行数」即总重复行数）。
+ */
+export interface LabelGridControl extends ControlBase {
+  type: 'labelgrid'
+  /** 每行列数（>=1），默认 3 */
+  columns?: number
+  /** 卡片水平间距（mm），默认 2 */
+  gapX?: number
+  /** 卡片垂直间距（mm），默认 2 */
+  gapY?: number
+  /** 卡片宽（mm）；缺省由 width 与列数/间距推算 */
+  cardWidth?: number
+  /** 卡片高（mm）；缺省由 children 包围盒推算 */
+  cardHeight?: number
+  /** 是否显示网格参考线（容器 + 卡片边框）。关闭后只留卡片底色，得到干净的无框标签纸。默认 true */
+  showLines?: boolean
+  /** 网格线线型：'solid' 实线（默认）| 'dashed' 虚线。仅在 showLines 为真时生效 */
+  lineStyle?: 'solid' | 'dashed'
+  /** 卡片模板：相对卡片左上角定位的子控件（绝对 mm，坐标已归一化） */
+  children: AnyControl[]
+}
+
 /* --------------------------------- 联合 ---------------------------------- */
 
 export type AnyControl =
@@ -449,4 +489,5 @@ export type AnyControl =
   | MathControl
   | SignatureControl
   | ZoneControl
+  | LabelGridControl
 

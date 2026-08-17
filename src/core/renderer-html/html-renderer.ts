@@ -28,6 +28,7 @@ import type {
   PlacedTable,
   PlacedNode,
   RenderRow,
+  GridLine,
 } from '@/core/layout-engine/types'
 import type { WatermarkConfig } from '@/types/template'
 import {
@@ -293,6 +294,26 @@ function renderNode(node: PlacedNode): string {
 
 /* --------------------------------- 页 --------------------------------- */
 
+function renderGridLines(lines: GridLine[]): string {
+  if (lines.length === 0) return ''
+  const cells = lines
+    .map((l) => {
+      const border = l.solid ? '1px solid rgba(37,99,235,0.55)' : '1px dashed rgba(37,99,235,0.5)'
+      const style = [
+        `left:${mmv(l.left)}`,
+        `top:${mmv(l.top)}`,
+        `width:${mmv(l.width)}`,
+        `height:${mmv(l.height)}`,
+        `border:${border}`,
+        'box-sizing:border-box',
+        'pointer-events:none',
+      ]
+      return `<div class="op-gridline"${styleAttr(style)}></div>`
+    })
+    .join('')
+  return `<div class="op-gridlines">${cells}</div>`
+}
+
 function renderSection(cls: string, nodes: PlacedNode[]): string {
   if (nodes.length === 0) return `<div class="op-section ${cls}"></div>`
   return `<div class="op-section ${cls}">${nodes.map(renderNode).join('')}</div>`
@@ -341,6 +362,7 @@ export function renderPage(page: LayoutPage, watermark?: WatermarkConfig | null)
     renderSection('op-header', page.header) +
     `<div class="op-content">` +
     renderSection('op-body', page.body) +
+    (page.gridLines ? renderGridLines(page.gridLines) : '') +
     `</div>` +
     renderSection('op-footer', page.footer) +
     `</div></div>`
