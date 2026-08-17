@@ -29,6 +29,8 @@
 </p>
 <br />
 
+🚀 **诚邀开发者加入** — 我们欢迎全球开发者加入 OpenPrint 开源社区，共同参与产品研发，贡献代码、提交 Issue 或建议，一起打造更优秀的打印解决方案！
+
 **OpenPrint** 是一款开源、零后端依赖的 Web 打印模板可视化设计器。它让用户通过拖拽即可设计快递面单、发票、标签、报表等打印模板，支持 AI 一句话生成、云打印、C++ 桌面客户端静默打印，3 分钟即可对接 ERP 系统。
 
 > 纯前端架构，无需服务器，无需数据库，一个浏览器即可运行。
@@ -433,7 +435,7 @@ OpenPrint 提供配套的 **C++ Qt 桌面打印客户端**，支持：
 
 ### 技术栈
 
-![C++](https://img.shields.io/badge/C++-17-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![C++](https://img.shields.io/badge/C++-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)
 ![Qt](https://img.shields.io/badge/Qt-6.x-41CD52?style=flat-square&logo=qt&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-064F8C?style=flat-square&logo=cmake&logoColor=white)
 
@@ -502,6 +504,8 @@ Chrome / Edge / Firefox / Safari 等现代浏览器。推荐使用 Chromium 内�
 ### 如何自定义字体？
 
 将字体文件（`.ttf` / `.woff2`）放入 `public/fonts/` 目录，并在 `src/core/fonts/catalog.ts` 中注册即可。
+
+启动客户端，支持扫描系统全部字体
 
 ### 支持批量打印吗？
 
