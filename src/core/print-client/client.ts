@@ -111,12 +111,19 @@ export async function checkHealth(
 
 /** 单台打印机字段归一化（服务端字段缺失时给安全默认，避免 UI 崩） */
 function normalizePrinter(raw: Partial<PrinterInfo>, index: number): PrinterInfo {
+  const maxDpi = typeof raw.maxDpi === 'number' && raw.maxDpi > 0 ? Math.floor(raw.maxDpi) : 0
+  // defaultDpi 缺失/非法时回退 300（≈旧固定 scale 3 = 288dpi 的清晰度档位）；
+  // 若 maxDpi 已知且更小，再钳到 maxDpi 内，保证默认值永远可打
+  let defaultDpi =
+    typeof raw.defaultDpi === 'number' && raw.defaultDpi > 0 ? Math.floor(raw.defaultDpi) : 300
+  if (maxDpi > 0 && defaultDpi > maxDpi) defaultDpi = maxDpi
   return {
     driver: raw.driver ?? '',
+    defaultDpi,
     isDefault: raw.isDefault === true,
     isOnline: raw.isOnline !== false,
     kind: raw.kind === 'virtual' || raw.kind === 'ticket' ? raw.kind : 'common',
-    maxDpi: typeof raw.maxDpi === 'number' ? raw.maxDpi : 0,
+    maxDpi,
     name: raw.name ?? `未命名打印机 ${index + 1}`,
     status: raw.status === 'error' ? 'error' : 'idle',
     supportsColor: raw.supportsColor === true,

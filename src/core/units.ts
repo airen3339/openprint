@@ -21,6 +21,9 @@ export const ptToMm = (pt: number): number => pt * MM_PER_PT
 export const ptToPx = (pt: number): number => mmToPx(ptToMm(pt))
 export const pxToPt = (px: number): number => mmToPt(pxToMm(px))
 
+/** 打印 DPI → 栅格化倍率（页面渲染基准 96 CSS dpi）：600dpi → 6.25x */
+export const dpiToScale = (dpi: number): number => dpi / PX_PER_INCH
+
 import type { PageUnit } from '@/types/template'
 
 /** 任意协议单位 → mm（Renderer 内部统一 mm 参与排版） */

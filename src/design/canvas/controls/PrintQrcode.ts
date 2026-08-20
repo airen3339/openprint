@@ -50,7 +50,12 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
         errorCorrectionLevel: this.errorLevel,
       })
       this.setElement(canvas)
-      this.set({ scaleX: targetW / canvas.width, scaleY: targetH / canvas.height })
+      // 等比缩放（meet 居中）填满控件框：二维码模块与人眼可读内容保持宽高比，
+      // 避免拉宽/拉高时变形（变形二维码可能无法扫描）。与预览端 svg meet 行为一致。
+      const natW = canvas.width || 1
+      const natH = canvas.height || 1
+      const s = Math.min(targetW / natW, targetH / natH)
+      this.set({ scaleX: s, scaleY: s })
     } catch {
       // 内容过长等异常：保持空白占位
     }

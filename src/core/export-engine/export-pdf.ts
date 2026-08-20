@@ -28,6 +28,7 @@ import { embedFontsInSvg, type FontFaceDef } from './fonts'
 import type { PageDecoration } from '@/types/template'
 import { blobToDataURL } from './util'
 import { mmv } from '@/core/renderer-html/css-generator'
+import { dpiToScale } from '@/core/units'
 import { outlineChartSvgText } from './chart-svg-to-path'
 
 /** 思源宋体 —— 位图底图（含非图表文本）内联字体，保证中文衬线效果 */
@@ -36,7 +37,14 @@ const PDF_FONTS: FontFaceDef[] = [
 ]
 
 export interface PdfOptions {
-  /** 高清倍率，1=96dpi / 2=192dpi / 3=288dpi（默认·最高清），可传 4 更锐 */
+  /**
+   * 渲染分辨率（DPI）：按打印机实际 DPI 栅格化（内部换算 scale = dpi / 96），
+   * 与打印端分辨率一致可避免客户端二次重采样导致「打不准」。
+   * 与 `scale` 同时给出时 **dpi 优先**；两者都缺省回退 scale 3（288dpi）。
+   * 注意：实际倍率还会被 canvas 面积护栏下调（页面 mm 尺寸不变，仅降分辨率）。
+   */
+  dpi?: number
+  /** 高清倍率，1=96dpi / 2=192dpi / 3=288dpi（默认·最高清），可传 4 更锐；被 dpi 覆盖 */
   scale?: number
   /** 页面装饰（背景色 + 水印），使 PDF 与预览一致 */
   pageDecoration?: PageDecoration
@@ -123,7 +131,8 @@ export async function documentToPdf(result: LayoutResult, opts: PdfOptions = {})
   const JsPDF = (mod as unknown as { jsPDF?: typeof mod.default; default: typeof mod.default }).jsPDF ?? mod.default
   const { pageWidth: w, pageHeight: h } = result.metrics
   const orientation = w > h ? 'landscape' : 'portrait'
-  const scale = opts.scale ?? 3
+  // dpi 优先：按打印机实际分辨率栅格化（scale = dpi / 96）；无 dpi 再看 scale，缺省 3（288dpi）
+  const scale = opts.dpi && opts.dpi > 0 ? dpiToScale(opts.dpi) : (opts.scale ?? 3)
   const imageType: 'jpeg' | 'png' = opts.imageType ?? 'png'
   const { addImageFmt } = imgSpec(imageType)
 

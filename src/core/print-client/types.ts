@@ -41,13 +41,15 @@ export type PrinterState = 'idle' | 'error'
 export interface PrinterInfo {
   /** 驱动名 */
   driver: string
+  /** 默认分辨率（DPI）—— 打印弹窗分辨率字段的缺省值 */
+  defaultDpi: number
   /** 是否系统默认打印机 */
   isDefault: boolean
   /** 是否在线 */
   isOnline: boolean
   /** 打印机类型 */
   kind: PrinterKind
-  /** 最大分辨率（DPI） */
+  /** 最大分辨率（DPI），0 = 未知/无上限 */
   maxDpi: number
   /** 打印机名（提交任务时的唯一标识） */
   name: string
@@ -98,6 +100,15 @@ export interface PrintJobRequest {
   content: string
   /** 文档总页数 */
   pages: number
+  /**
+   * 页面物理宽（mm）—— 由模板 pageSetup 透传（与生成 PDF 用的 `format:[w,h]` 同一组数）。
+   * 客户端据此设置纸张尺寸，避免依赖解析 PDF MediaBox / 打印机默认 A4 导致纸张不符、内容错位打不准。
+   */
+  width: number
+  /** 页面物理高（mm） */
+  height: number
+  /** 尺寸单位，恒为 'mm'（与内部统一单位一致） */
+  unit?: 'mm'
   /** 打印份数 */
   copies: number
   /** 纸张方向 */
@@ -106,6 +117,11 @@ export interface PrintJobRequest {
   duplex: boolean
   /** 是否彩色（false = 黑白） */
   color: boolean
+  /**
+   * 渲染分辨率（DPI）：Web 端按此 DPI 栅格化 PDF（scale = dpi / 96），
+   * 客户端可据此设置打印分辨率。缺省由 Web 端取打印机 defaultDpi。
+   */
+  dpi?: number
 }
 
 /** POST /print 响应体 */

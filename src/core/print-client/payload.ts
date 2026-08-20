@@ -11,6 +11,10 @@
  *
  * 清晰度优先：PDF 内部位图底图默认 **PNG（无损·最高清）**，文字/线条边缘真正锐利，
  * 打印推荐。体积较大（纯文字页 ~10+ MB）；体积敏感场景可传 `imageType: 'jpeg'`。
+ *
+ * DPI 感知（2026-08-20）：传 `dpi`（打印机 defaultDpi / maxDpi 决策，见 ./dpi.ts）
+ * 即按目标打印机实际分辨率栅格化（scale = dpi / 96），客户端打印不再二次重采样；
+ * 超高 DPI 会被 canvas 面积护栏自动下调（页面 mm 尺寸不变，仅降分辨率）。
  */
 import type { RenderRequest } from '@/core/sdk'
 import { renderDocument } from '@/core/sdk'
@@ -26,12 +30,22 @@ export interface PrintPayload {
   content: string
   /** 总页数 */
   pages: number
+  /** 页面物理宽（mm），与 PDF 页面一致，供客户端设置纸张尺寸 */
+  width: number
+  /** 页面物理高（mm） */
+  height: number
   /** 载荷字符长度（UI 展示体积用） */
   bytes: number
 }
 
 export interface BuildPrintPayloadOptions {
-  /** 位图倍率，默认 3（288dpi·最高清）；要更锐可传 4 */
+  /**
+   * 渲染分辨率（DPI）：按目标打印机实际分辨率栅格化 PDF（scale = dpi / 96），
+   * 客户端不再二次重采样。通常取打印机 `defaultDpi`（弹窗可手动改，需 ≤ `maxDpi`）。
+   * 与 `scale` 同时给出时 dpi 优先；两者都缺省回退 scale 3（288dpi）。
+   */
+  dpi?: number
+  /** 位图倍率，默认 3（288dpi·最高清）；被 dpi 覆盖 */
   scale?: number
   /**
    * 多页 PDF 的位图底图压缩格式（默认 `'png'`，无损最清晰）：
@@ -67,7 +81,8 @@ export async function buildPrintPayload(
 
   onProgress?.(30)
   const blob = await documentToPdf(result, {
-    scale: options.scale ?? 3,
+    dpi: options.dpi,
+    scale: options.scale,
     imageType: options.imageType ?? 'png',
     pageDecoration: deco,
     onPage: (current, total) => {
@@ -82,6 +97,10 @@ export async function buildPrintPayload(
     encoding: 'base64',
     content: base64,
     pages: Math.max(pages, 1),
+    // 透传页面物理尺寸（mm），与生成 PDF 用的 format:[w,h] 同源（result.metrics 恒为 mm），
+    // 供客户端直接设置纸张大小，避免依赖解析 PDF MediaBox 导致纸张不符/打不准。
+    width: result.metrics.pageWidth,
+    height: result.metrics.pageHeight,
     bytes: base64.length,
   }
 }

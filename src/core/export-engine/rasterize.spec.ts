@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { inlinePageImages, toXmlSafe } from '@/core/export-engine/rasterize'
+import { inlinePageImages, toXmlSafe, capScaleByArea, MAX_CANVAS_AREA } from '@/core/export-engine/rasterize'
 
 describe('toXmlSafe —— HTML→XML 安全（foreignObject 光栅化前置）', () => {
   it('void 标签补自闭合', () => {
@@ -101,5 +101,33 @@ describe('inlinePageImages —— 外部图片内联（防 canvas taint）', () 
   it('data URI 的 CSS url 保持原样', async () => {
     const html = '<div style="background:url(data:image/png;base64,AAA)"></div>'
     expect(await inlinePageImages(html)).toBe(html)
+  })
+})
+
+describe('capScaleByArea —— canvas 面积/边长护栏（防 Chromium 超限静默空白）', () => {
+  it('A4 基准（794×1123）：600dpi=6.25x 不受影响', () => {
+    expect(capScaleByArea(794, 1123, 6.25)).toBe(6.25)
+  })
+
+  it('A4 基准：1200dpi=12.5x 在面积上限内（139M px < 250M）不受影响', () => {
+    expect(capScaleByArea(794, 1123, 12.5)).toBe(12.5)
+  })
+
+  it('A4 基准：2400dpi=25x 超面积上限 → 自动下调（页面 mm 不变仅降分辨率）', () => {
+    const capped = capScaleByArea(794, 1123, 25)
+    expect(capped).toBeLessThan(25)
+    // 面积恰好不超上限：capped² × 794 × 1123 ≤ 250M
+    expect(capped * capped * 794 * 1123).toBeLessThanOrEqual(MAX_CANVAS_AREA)
+  })
+
+  it('长条页面（219×3780）：边长护栏优先于面积护栏', () => {
+    // 面积允许 17.4x，但高 3780×17.4 > 32767 → 被边长压到 32767/3780 ≈ 8.67
+    const capped = capScaleByArea(219, 3780, 20)
+    expect(capped).toBeCloseTo(32767 / 3780, 4)
+  })
+
+  it('scale ≤ 1 原样返回（护栏只降不升）', () => {
+    expect(capScaleByArea(794, 1123, 1)).toBe(1)
+    expect(capScaleByArea(794, 1123, 0.5)).toBe(1)
   })
 })

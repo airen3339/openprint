@@ -62,9 +62,13 @@ export class PrintBarcode extends FabricImage implements IPrintObject {
     })
     if (canvas) {
       this.setElement(canvas)
-      // 宽度独立缩放填满控件；高度按 canvas 自然尺寸缩放（已接近控件高度，scaleY ≈ 1）。
-      // 不再强行 Y 方向压缩，避免文字行被挤没。
-      this.set({ scaleX: w / canvas.width, scaleY: h / canvas.height })
+      // 等比缩放（meet 居中）填满控件框：保持条码条与下方人眼可读数字的宽高比，
+      // 避免把控件拉宽 / 拉高时被横向或纵向拉伸变形。
+      // 与预览端 data-binder 的 svg preserveAspectRatio="xMidYMid meet" 行为一致，所见即所得。
+      const natW = canvas.width || 1
+      const natH = canvas.height || 1
+      const s = Math.min(w / natW, h / natH)
+      this.set({ scaleX: s, scaleY: s })
     }
     this.setCoords()
     this.canvas?.requestRenderAll()

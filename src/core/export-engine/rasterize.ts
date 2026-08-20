@@ -122,14 +122,41 @@ function scaleSvgViewport(svg: string, scale: number): string {
   )
 }
 
+/**
+ * canvas 安全上限（Chromium 实测约束，超限 canvas 被静默置空 → 整页空白）：
+ * - 面积上限 ≈ 2.68 亿 px（16384²），留余量取 2.5 亿
+ * - 单边上限 65535，留余量取 32767（兼顾 <img> 解码路径）
+ * 超限时按比例下调倍率：页面物理尺寸（mm）不变，只降位图分辨率。
+ */
+export const MAX_CANVAS_AREA = 250_000_000
+export const MAX_CANVAS_SIDE = 32767
+
+/** 面积/边长护栏内允许的最大倍率（scale 只降不升） */
+export function capScaleByArea(baseW: number, baseH: number, scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 1) return Math.max(1, scale || 1)
+  const w = Math.max(1, baseW)
+  const h = Math.max(1, baseH)
+  let max = Infinity
+  const area = w * h
+  if (area > 0) max = Math.min(max, Math.sqrt(MAX_CANVAS_AREA / area))
+  max = Math.min(max, MAX_CANVAS_SIDE / w, MAX_CANVAS_SIDE / h)
+  return Math.max(1, Math.min(scale, max))
+}
+
 export async function svgToCanvas(svg: string, scale: number, bg: string): Promise<HTMLCanvasElement> {
-  // 先放大 SVG 显示尺寸，再加载：img 本身就是高分位图，canvas 无需再插值放大
-  const scaled = scaleSvgViewport(svg, scale)
+  // 先读未缩放的基准尺寸，套面积/边长护栏得到有效倍率（只降不升），
+  // 避免 2400dpi 等高超档位把 canvas 顶爆（Chromium 超限静默空白）
+  const base = svg.match(/<svg[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/)
+  const baseW = Math.max(1, base ? parseFloat(base[1]!) : 794)
+  const baseH = Math.max(1, base ? parseFloat(base[2]!) : 1123)
+  const effScale = capScaleByArea(baseW, baseH, scale)
+  // 再放大 SVG 显示尺寸，再加载：img 本身就是高分位图，canvas 无需再插值放大
+  const scaled = scaleSvgViewport(svg, effScale)
   const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(scaled)
   // fallback 尺寸从放大后的 SVG 宽高推导（取不到再用 A4×scale 兜底）
   const dim = scaled.match(/<svg[^>]*\bwidth="([\d.]+)"[^>]*\bheight="([\d.]+)"/)
-  const cw = Math.max(1, Math.round(dim ? parseFloat(dim[1]!) : 794 * scale))
-  const ch = Math.max(1, Math.round(dim ? parseFloat(dim[2]!) : 1123 * scale))
+  const cw = Math.max(1, Math.round(dim ? parseFloat(dim[1]!) : 794 * effScale))
+  const ch = Math.max(1, Math.round(dim ? parseFloat(dim[2]!) : 1123 * effScale))
   const fallback = (): HTMLCanvasElement => {
     const canvas = document.createElement('canvas')
     canvas.width = cw

@@ -39,6 +39,7 @@ import {
   describePrintError,
   formatPayloadSize,
   generateJobId,
+  resolvePrintDpi,
   submitPrintJob,
   type PrinterInfo,
 } from '@/core/print-client'
@@ -147,27 +148,18 @@ const currentPrinter = computed<PrinterInfo | null>(() => {
   return localPrinters.value.find((p) => p.name === selectedPrinter.value) ?? null
 })
 
-/** 选中打印机后自动收敛不支持的能力（不支持双面 → 强制单面） */
+/** 选中打印机后自动收敛不支持的能力（不支持双面 → 强制单面），并默认填入该机 defaultDpi */
 watch(currentPrinter, (p) => {
   if (!p) return
   if (!p.supportsDuplex) duplex.value = 'single'
   if (!p.supportsColor) color.value = 'grayscale'
+  // 换打印机 → 分辨率重置为该机默认档（用户仍可手动改，提交时按 maxDpi 钳制）
+  dpi.value = resolvePrintDpi(null, p)
 })
 
 /* ------------------------------ 打印任务名 ------------------------------ */
-type NamingMode = 'filename' | 'random'
-const namingMode = ref<NamingMode>('filename')
-const randomSeed = ref(0)
-
-const taskName = computed(() => {
-  if (namingMode.value === 'filename') {
-    return store.templateName || '未命名模板'
-  }
-  void randomSeed.value // 依赖种子：每次打开弹窗换一个新随机名
-  const ts = Date.now().toString(36).slice(-6)
-  const rand = Math.random().toString(36).slice(2, 6)
-  return `Print-${ts}-${rand}`
-})
+// 任务名固定取模板名（无随机），直接显示在打印机队列里，所见即所得。
+const taskName = computed(() => store.templateName || '未命名模板')
 
 /* ------------------------------ 打印参数 ------------------------------ */
 const copies = ref(1)
@@ -177,6 +169,27 @@ type Duplex = 'single' | 'double'
 const duplex = ref<Duplex>('single')
 type ColorMode = 'color' | 'grayscale'
 const color = ref<ColorMode>('grayscale')
+/**
+ * 渲染分辨率（DPI）：PDF 按此分辨率栅格化（scale = dpi / 96），与打印机一致避免「打不准」。
+ * 默认取当前打印机 defaultDpi（换打印机时重置），可手动改，提交前按 maxDpi 钳制。
+ */
+const dpi = ref<number | null>(null)
+
+/** 分辨率输入上限（打印机未上报 maxDpi 时放开到 2400 常见上限） */
+const dpiMax = computed(() => {
+  const m = currentPrinter.value?.maxDpi ?? 0
+  return m > 0 ? m : 2400
+})
+
+/** 手动输入越界时立即钳回（NInputNumber 失焦触发 update） */
+watch(dpi, (v) => {
+  if (v === null) return
+  const clamped = resolvePrintDpi(v, currentPrinter.value)
+  if (clamped !== v) dpi.value = clamped
+})
+
+/** 本次打印实际生效的 DPI（手动值优先 → 打印机 defaultDpi → 300，maxDpi 钳制） */
+const effectiveDpi = computed(() => resolvePrintDpi(dpi.value, currentPrinter.value))
 
 /* ------------------------------ 探测 ------------------------------ */
 
@@ -243,8 +256,8 @@ function resetDefaults(): void {
   orientation.value = 'portrait'
   duplex.value = 'single'
   color.value = 'grayscale'
-  namingMode.value = 'filename'
-  randomSeed.value += 1
+  // 分辨率回打印机默认档（打印机会话期间未变时 watch 不触发，这里显式重置）
+  dpi.value = currentPrinter.value ? resolvePrintDpi(null, currentPrinter.value) : null
 }
 
 /* ------------------------------ 生命周期 ------------------------------ */
@@ -313,12 +326,12 @@ async function doPrint(): Promise<void> {
         },
       },
       {
-        scale: 3,
+        dpi: effectiveDpi.value,
         imageType: 'png',
         onProgress: (p) => {
           progress.value = p
           if (p < 30) progressStage.value = '正在排版渲染…'
-          else if (p < 85) progressStage.value = '正在生成 PDF…'
+          else if (p < 85) progressStage.value = `正在生成 PDF（${effectiveDpi.value} DPI）…`
           else progressStage.value = '准备推送…'
         },
       },
@@ -335,10 +348,13 @@ async function doPrint(): Promise<void> {
         encoding: payload.encoding,
         content: payload.content,
         pages: payload.pages,
+        width: payload.width,
+        height: payload.height,
         copies: copies.value,
         orientation: orientation.value,
         duplex: duplex.value === 'double',
         color: color.value === 'color',
+        dpi: effectiveDpi.value,
       },
       printerBase.value,
       undefined,
@@ -442,7 +458,9 @@ function close(): void {
               {{ currentPrinter.status === 'idle' ? '空闲' : '异常' }}
             </NTag>
             <NTag size="tiny" round>{{ KIND_LABEL[currentPrinter.kind] }}</NTag>
-            <NTag size="tiny" round>{{ currentPrinter.maxDpi }} DPI</NTag>
+            <NTag size="tiny" round>
+              默认 {{ currentPrinter.defaultDpi }} / 最高 {{ currentPrinter.maxDpi }} DPI
+            </NTag>
             <NTag size="tiny" round :type="currentPrinter.supportsColor ? 'info' : 'default'">
               {{ currentPrinter.supportsColor ? '支持彩色' : '仅黑白' }}
             </NTag>
@@ -459,16 +477,10 @@ function close(): void {
         </div>
       </div>
 
-      <!-- 打印任务名 -->
+      <!-- 打印任务名（固定模板名，无随机） -->
       <div class="print-field">
         <div class="print-field-label">任务名称</div>
-        <div class="print-name-bar">
-          <NRadioGroup v-model:value="namingMode" size="small" :disabled="formDisabled">
-            <NRadioButton value="filename">文件名</NRadioButton>
-            <NRadioButton value="random">随机</NRadioButton>
-          </NRadioGroup>
-          <div class="print-name-preview">{{ taskName }}</div>
-        </div>
+        <div class="print-name-preview">{{ taskName }}</div>
       </div>
 
       <!-- 打印份数 -->
@@ -483,6 +495,29 @@ function close(): void {
           :disabled="formDisabled"
           style="width: 100px"
         />
+      </div>
+
+      <!-- 打印分辨率（DPI）：PDF 按此分辨率栅格化，与打印机一致避免打不准 -->
+      <div v-if="target === 'local'" class="print-field">
+        <div class="print-field-label">分辨率</div>
+        <div class="flex flex-1 items-center gap-3">
+          <NInputNumber
+            v-model:value="dpi"
+            size="small"
+            :min="72"
+            :max="dpiMax"
+            :disabled="formDisabled"
+            style="width: 132px"
+          >
+            <template #suffix>DPI</template>
+          </NInputNumber>
+          <NText depth="3" class="text-12px">
+            PDF 按此分辨率渲染
+            <template v-if="currentPrinter">
+              · 该机默认 {{ currentPrinter.defaultDpi }} · 上限 {{ dpiMax }}
+            </template>
+          </NText>
+        </div>
       </div>
 
       <!-- 方向 -->
@@ -536,7 +571,10 @@ function close(): void {
     <!-- 推送格式说明 -->
     <div class="print-format-note">
       <div class="i-carbon-information text-13px" />
-      <span>推送规则：所有文档统一转 <b>PDF（base64）</b> 推送，本地客户端用 QPrinter 直接打印。</span>
+      <span>
+        推送规则：文档按所选分辨率（{{ effectiveDpi }} DPI）栅格化为
+        <b>PDF（base64）</b> 推送，与打印机分辨率一致，本地客户端直接打印无需重采样。
+      </span>
     </div>
 
     <!-- 打印进度（渲染 + 推送 PDF 到打印机） -->
