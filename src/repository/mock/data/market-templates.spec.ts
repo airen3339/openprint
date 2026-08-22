@@ -65,6 +65,32 @@ describe('market-financial-report 模板', () => {
   })
 })
 
+describe('市场模板坐标迁移（整页相对，2026-08-21）', () => {
+  it('资产标签：body 首控件 left/top = 页面边距（内容回到边距线内）', () => {
+    const tpl = findTemplate('market-asset-label').build()
+    const page = tpl.document.page
+    const body = tpl.document.sections.find((s) => s.type === 'body')!
+    const first = body.components[0]!
+    // 原内容区相对坐标 (0,0) 迁移后 = 边距 (left, top)
+    expect(first.left).toBe(page.margin.left) // 2
+    expect(first.top).toBe(page.margin.top) // 3
+    // 内容最右不超页宽（留在边距内）
+    const maxRight = Math.max(...body.components.map((c) => (c.left ?? 0) + (c.width ?? 0)))
+    expect(maxRight).toBeLessThanOrEqual(page.width + 0.001)
+  })
+
+  it('A4 报表：body 控件整体右移/下移一个边距，不超出左上边距线', () => {
+    const tpl = findTemplate('market-financial-report').build()
+    const page = tpl.document.page
+    const body = tpl.document.sections.find((s) => s.type === 'body')!
+    for (const c of body.components) {
+      if (c.type === 'zone' || c.type === 'labelgrid') continue
+      expect(c.left ?? 0).toBeGreaterThanOrEqual((page.margin.left ?? 0) - 0.001)
+      expect(c.top ?? 0).toBeGreaterThanOrEqual((page.margin.top ?? 0) - 0.001)
+    }
+  })
+})
+
 describe('模板市场新增：简历 / 合同 / 文档', () => {
   it('新增类目标签已注册', () => {
     expect(MARKET_CATEGORY_LABEL.resume).toBe('简历')

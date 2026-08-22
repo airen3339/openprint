@@ -3,11 +3,11 @@
  * ImageProps —— 图片控件属性（§5.8）
  * inline 上传转 Base64 / url 外链 / binding 绑定字段（asset 后续接资源目录）
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NInput, NInputNumber, NSelect, NButton, NUpload, type UploadCustomRequestOptions } from 'naive-ui'
 import type { ImageControl, ImageValueMode } from '@/types/control'
 import { useDesignerStore } from '@/design/stores/designer'
-import BindingEditor from './BindingEditor.vue'
+import VariableModal from './VariableModal.vue'
 
 const store = useDesignerStore()
 const control = computed(() => store.selectedControl as ImageControl | null)
@@ -37,6 +37,12 @@ function onUpload({ file }: UploadCustomRequestOptions): void {
     patchContent(reader.result as string)
   }
   reader.readAsDataURL(raw)
+}
+
+/** 绑定字段 → 变量选择弹窗（与文本组件一致：全部单据字段 + 类型 + 示例值） */
+const varModalShow = ref(false)
+function onVarConfirm(path: string): void {
+  patchContent(path)
 }
 </script>
 
@@ -70,10 +76,25 @@ function onUpload({ file }: UploadCustomRequestOptions): void {
         @update:value="patchContent"
       />
     </div>
-    <div v-else class="props-row">
-      <BindingEditor :value="control.value?.content" @update:value="patchContent($event ?? '')" />
+    <div v-else class="props-row img-var-row">
+      <NInput
+        size="small"
+        :value="control.value?.content ?? ''"
+        placeholder="字段路径，如 order.photoUrl"
+        @update:value="patchContent"
+      />
+      <NButton size="small" @click="varModalShow = true">
+        <template #icon><span class="i-carbon-list-dropdown" /></template>
+        选择字段
+      </NButton>
     </div>
   </div>
+
+  <VariableModal
+    v-model:show="varModalShow"
+    :binding="control?.value?.mode === 'binding' ? (control.value.content ?? '') : ''"
+    @confirm="onVarConfirm"
+  />
 
   <div v-if="control" class="props-section">
     <div class="props-title">显示</div>
@@ -103,3 +124,15 @@ function onUpload({ file }: UploadCustomRequestOptions): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.img-var-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.img-var-row :deep(.n-input) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+</style>

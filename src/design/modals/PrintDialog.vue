@@ -40,7 +40,9 @@ import {
   formatPayloadSize,
   generateJobId,
   resolvePrintDpi,
+  resolvePrintOrientation,
   submitPrintJob,
+  type OrientationPref,
   type PrinterInfo,
 } from '@/core/print-client'
 
@@ -64,6 +66,7 @@ const {
   errorText: probeError,
   baseUrl: printerBase,
   probe: runProbe,
+  probeIfStale: runProbeIfStale,
 } = usePrinterProbe()
 
 /* ------------------------------ 云打印探测 ------------------------------ */
@@ -163,12 +166,16 @@ const taskName = computed(() => store.templateName || '未命名模板')
 
 /* ------------------------------ 打印参数 ------------------------------ */
 const copies = ref(1)
-type Orientation = 'portrait' | 'landscape'
-const orientation = ref<Orientation>('portrait')
 type Duplex = 'single' | 'double'
 const duplex = ref<Duplex>('single')
 type ColorMode = 'color' | 'grayscale'
 const color = ref<ColorMode>('grayscale')
+/**
+ * 纸张方向：auto=跟随模板页面设置；portrait/landscape=打印时覆盖。
+ * 部分打印机纸张方向"反直觉"（模板横向、打印机却纵向出纸），故打印面板提供覆盖入口；
+ * 渲染仍按模板方向出 PDF，客户端按所选方向旋转，不改文档排版。
+ */
+const orientation = ref<OrientationPref>('auto')
 /**
  * 渲染分辨率（DPI）：PDF 按此分辨率栅格化（scale = dpi / 96），与打印机一致避免「打不准」。
  * 默认取当前打印机 defaultDpi（换打印机时重置），可手动改，提交前按 maxDpi 钳制。
@@ -193,9 +200,13 @@ const effectiveDpi = computed(() => resolvePrintDpi(dpi.value, currentPrinter.va
 
 /* ------------------------------ 探测 ------------------------------ */
 
-/** 本机：走共享探测单例 */
-async function detectLocalPrinters(): Promise<void> {
-  await runProbe()
+/** 本机：走共享探测单例。
+ *  force=false（打开弹窗/切换目标）：probeIfStale —— 已连接 15s 内复用现有状态，
+ *  避免无条件重探在客户端忙时（字体加载/打印任务）超时把连接打掉；
+ *  force=true（用户手动点刷新）：强制 probe 拿最新列表。 */
+async function detectLocalPrinters(force = false): Promise<void> {
+  if (force) await runProbe()
+  else await runProbeIfStale()
   const def = defaultPrinter.value
   if (def && !localPrinters.value.some((p) => p.name === selectedPrinter.value)) {
     selectedPrinter.value = def.name
@@ -253,9 +264,9 @@ function readCloudSettings(): { host: string; port: number } {
 /** 重置为默认值 */
 function resetDefaults(): void {
   copies.value = 1
-  orientation.value = 'portrait'
   duplex.value = 'single'
   color.value = 'grayscale'
+  orientation.value = 'auto'
   // 分辨率回打印机默认档（打印机会话期间未变时 watch 不触发，这里显式重置）
   dpi.value = currentPrinter.value ? resolvePrintDpi(null, currentPrinter.value) : null
 }
@@ -280,9 +291,9 @@ watch(
   },
 )
 
-/** 刷新打印机列表 */
+/** 刷新打印机列表（手动）→ 强制重探拿最新状态 */
 function refreshPrinters(): void {
-  if (target.value === 'local') void detectLocalPrinters()
+  if (target.value === 'local') void detectLocalPrinters(true)
   else void detectCloudPrinters()
 }
 
@@ -351,7 +362,8 @@ async function doPrint(): Promise<void> {
         width: payload.width,
         height: payload.height,
         copies: copies.value,
-        orientation: orientation.value,
+        // 方向：默认跟随模板页面设置，用户可在面板覆盖（部分打印机纸张方向反直觉）
+        orientation: resolvePrintOrientation(orientation.value, store.pageSetup.orientation),
         duplex: duplex.value === 'double',
         color: color.value === 'color',
         dpi: effectiveDpi.value,
@@ -520,21 +532,6 @@ function close(): void {
         </div>
       </div>
 
-      <!-- 方向 -->
-      <div class="print-field">
-        <div class="print-field-label">方向</div>
-        <NRadioGroup v-model:value="orientation" size="small" :disabled="formDisabled">
-          <NRadioButton value="portrait">
-            <div class="i-carbon-document-blank mr-1 inline-block text-14px align-middle" />
-            纵向
-          </NRadioButton>
-          <NRadioButton value="landscape">
-            <div class="i-carbon-document-horizontal mr-1 inline-block text-14px align-middle" />
-            横向
-          </NRadioButton>
-        </NRadioGroup>
-      </div>
-
       <!-- 单面/双面 -->
       <div class="print-field">
         <div class="print-field-label">双面打印</div>
@@ -565,6 +562,22 @@ function close(): void {
             彩色
           </NRadioButton>
         </NRadioGroup>
+      </div>
+
+      <!-- 方向：默认跟随模板，可手动覆盖（部分打印机纸张方向反直觉） -->
+      <div class="print-field">
+        <div class="print-field-label">方向</div>
+        <NRadioGroup v-model:value="orientation" size="small" :disabled="formDisabled">
+          <NRadioButton value="auto">跟随模板</NRadioButton>
+          <NRadioButton value="portrait">纵向</NRadioButton>
+          <NRadioButton value="landscape">横向</NRadioButton>
+        </NRadioGroup>
+        <NTooltip>
+          <template #trigger>
+            <div class="i-carbon-information text-13px cursor-pointer text-brand-text-3" />
+          </template>
+          默认跟随模板页面设置的方向。部分打印机纸张方向与预期相反（如模板横向、打印却纵向出纸），可在此手动覆盖为纵向 / 横向；不影响文档排版，打印时由客户端旋转。
+        </NTooltip>
       </div>
     </div>
 

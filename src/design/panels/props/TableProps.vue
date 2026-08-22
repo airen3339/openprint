@@ -41,6 +41,7 @@ import {
 import { tableStyleLabel, TABLE_STYLE_PRESETS } from '@/design/canvas/table-style-presets'
 import TableStylePickerModal from '@/design/modals/TableStylePickerModal.vue'
 import BindingEditor from './BindingEditor.vue'
+import VariableModal from './VariableModal.vue'
 
 const store = useDesignerStore()
 const control = computed(() => store.selectedControl as TableControl | null)
@@ -114,6 +115,17 @@ function removeColumn(index: number): void {
 }
 function moveColumn(index: number, dir: -1 | 1): void {
   applyGrid((c) => moveTableColumn(c, index, index + dir))
+}
+
+/** 列「字段」的变量选择弹窗（数据列字段应为明细数组字段，弹窗展示全部字段 + 类型 + 示例值） */
+const colVarShow = ref(false)
+const colVarIndex = ref(-1)
+function openColVar(i: number): void {
+  colVarIndex.value = i
+  colVarShow.value = true
+}
+function onColVarConfirm(path: string): void {
+  if (colVarIndex.value >= 0) patchColumn(colVarIndex.value, { field: path })
 }
 
 /* ------------------------------ 样式编辑 ------------------------------ */
@@ -536,11 +548,15 @@ function patchGroupBy(v: string | null): void {
         <span class="props-label">字段</span>
         <NAutoComplete
           size="small"
+          class="flex-1"
           :value="col.field ?? ''"
           :options="columnFieldOptions"
           placeholder="选择或输入字段，如 items[].qty"
           @update:value="patchColumn(i, { field: $event || undefined })"
         />
+        <NButton size="tiny" title="从数据源选择字段" @click="openColVar(i)">
+          <template #icon><span class="i-carbon-list-dropdown" /></template>
+        </NButton>
       </div>
       <div class="props-row">
         <span class="props-label">参与合计</span>
@@ -804,4 +820,10 @@ function patchGroupBy(v: string | null): void {
       </NCollapseItem>
     </NCollapse>
   </div>
+
+  <VariableModal
+    v-model:show="colVarShow"
+    :binding="colVarIndex >= 0 ? (control?.columns[colVarIndex]?.field ?? '') : ''"
+    @confirm="onColVarConfirm"
+  />
 </template>

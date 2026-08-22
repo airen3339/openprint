@@ -159,7 +159,11 @@ export interface PageMetrics {
   contentHeight: number
   headerHeight: number
   footerHeight: number
-  /** 正文可用高度 = contentHeight - headerHeight - footerHeight */
+  /**
+   * 流式表格切页预算基准 = contentHeight（页高 - 上下边距）。
+   * 页眉/页脚色带占位（headerHeight/footerHeight）由分页引擎在切片时按页裁剪
+   * （非首页从页眉下方起、每页可用高 = 页高 - 页眉 - 页脚），见 paginateFlowTable。
+   */
   bodyHeight: number
 }
 
@@ -178,6 +182,8 @@ export type WarningCode =
   | 'SIGNATURE_EMPTY' // 签名为空（未手写）
   | 'PAGE_LIMIT_REACHED' // 触发最大页数保护
   | 'ROW_TOO_TALL' // 单行高于整页可用高度
+  | 'LABEL_GRID_DATA_MISSING' // 标签网格 dataSource 不存在或不是数组（回退纯布局平铺）
+  | 'LABEL_GRID_DATA_EMPTY' // 标签网格 dataSource 为空数组（回退纯布局平铺）
 
 export interface RenderWarning {
   code: WarningCode

@@ -345,7 +345,7 @@ const watermark = computed<WatermarkConfig>(() => store.pageSetup.watermark ?? {
           </div>
         </div>
 
-        <!-- 边距锁定：默认开启限制正文在边距内移动；关闭后自由移动（边距仅作参考线，内外都会打印） -->
+        <!-- 边距锁定：默认开启限制正文在边距内移动（边距=设计安全区）；关闭后自由移动（边距仅参考线，内外都会打印） -->
         <div class="props-row" style="margin-top: 4px">
           <span class="props-label" style="min-width: 56px">边距锁定</span>
           <NSwitch

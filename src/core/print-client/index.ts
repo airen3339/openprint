@@ -46,6 +46,9 @@ export type { PrintPayload, BuildPrintPayloadOptions } from './payload'
 
 export { FALLBACK_PRINT_DPI, MIN_PRINT_DPI, clampDpi, resolvePrintDpi } from './dpi'
 
+export { resolvePrintOrientation } from './orientation'
+export type { OrientationPref } from './orientation'
+
 export type {
   PrinterHealth,
   PrinterInfo,

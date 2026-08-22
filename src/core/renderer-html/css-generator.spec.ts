@@ -50,4 +50,12 @@ describe('generateCss —— 动态样式生成', () => {
     expect(mmv(10)).toBe('10mm')
     expect(mmv(0)).toBe('0mm')
   })
+
+  it('条码「宽高独立」：无特例规则，条码/二维码统一 100%×100% 填满控件框', async () => {
+    const out = await css({})
+    // 条码不再有 width:auto 特例（宽度独立可调，由 data-binder 的 SVG width 参数 + preserveAspectRatio="none" 实现）
+    expect(out).not.toContain('.op-barcode-svg')
+    // 通用规则仍在：条码/二维码 SVG 均填满控件框
+    expect(out).toContain('.op-code > svg { display: block; width: 100%; height: 100%; }')
+  })
 })

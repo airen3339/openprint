@@ -388,6 +388,77 @@ export const darkThemeOverrides: GlobalThemeOverrides = {
   ...darkComponents,
 }
 
+/* ============================== SVIP 黑金主题 ==============================
+ * 黑金 = 暗色基座 + 金色覆盖：背景 #3E4144、金色渐变主色
+ * （#FFB95A → #E4A93C → #B87100）、小灰字 #C0C4CC。
+ * NConfigProvider.theme 用 darkTheme（黑金属于深色系），仅 themeOverrides 替换。
+ * ========================================================================= */
+
+const SVIP_PRIMARY = '#E4A93C'
+const SVIP_PRIMARY_HOVER = '#FFB95A'
+const SVIP_PRIMARY_PRESSED = '#B87100'
+const SVIP_PRIMARY_SUPPL = '#FFCF6E'
+const SVIP_PRIMARY_FADE = '#3A3423'
+const SVIP_PRIMARY_FADE_HOVER = '#4A3F28'
+
+/** SVIP：基于暗色 common 的覆盖（背景/文字/主色全换黑金色系） */
+export const svipThemeOverrides: GlobalThemeOverrides = {
+  common: {
+    ...buildCommonDark(),
+    // 背景：用户指定 #3E4144；表面略亮形成层次
+    bodyColor: '#3E4144',
+    modalColor: '#484C50',
+    popoverColor: '#484C50',
+    cardColor: '#484C50',
+    tableColor: '#484C50',
+    codeColor: '#3A3D40',
+    headerColor: '#3A3D40',
+    // 边框
+    borderColor: '#585C61',
+    borderColorStrong: '#6A6E73',
+    dividerColor: '#585C61',
+    // 文字：主文字暖金白 / 小灰字 #C0C4CC
+    textColorBase: '#F2E6C9',
+    textColor1: '#F2E6C9',
+    textColor2: '#C0C4CC',
+    textColor3: '#9AA0A6',
+    placeholderColor: '#9AA0A6',
+    placeholderColorDisabled: '#6E7378',
+    // 主色：金色系
+    primaryColor: SVIP_PRIMARY,
+    primaryColorHover: SVIP_PRIMARY_HOVER,
+    primaryColorPressed: SVIP_PRIMARY_PRESSED,
+    primaryColorSuppl: SVIP_PRIMARY_SUPPL,
+    primaryColorFaded: SVIP_PRIMARY_FADE,
+    primaryColorFadedHover: SVIP_PRIMARY_FADE_HOVER,
+    // 控件态
+    invertedColor: '#2B2E31',
+    tabColor: '#484C50',
+    progressRailColor: '#585C61',
+    railColor: '#585C61',
+    tagColorCheckableDefault: '#3A3D40',
+    tagTextColorCheckableDefault: '#C0C4CC',
+  } as NonNullable<GlobalThemeOverrides['common']>,
+  ...darkComponents,
+  // 黑金组件级微调：portal 场景（下拉菜单）与表格表头也换黑金表面色
+  Select: {
+    ...darkComponents.Select,
+    peers: {
+      ...darkComponents.Select?.peers,
+      InternalSelectMenu: {
+        ...darkComponents.Select?.peers?.InternalSelectMenu,
+        color: '#484C50',
+        optionTextColorActive: SVIP_PRIMARY,
+        optionTextColorPressed: SVIP_PRIMARY_PRESSED,
+      },
+    },
+  },
+  DataTable: {
+    ...darkComponents.DataTable,
+    thColor: '#3A3D40',
+  },
+}
+
 /** 语义化 CSS 变量（同步到 :root / html.dark，供 uno.config 与 scoped CSS 使用） */
 export const themeCssVars = {
   light: {

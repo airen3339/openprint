@@ -21,7 +21,6 @@ import {
   NButton,
   NPopover,
   NModal,
-  NSelect,
   NSpin,
   NTooltip,
   useMessage,
@@ -54,14 +53,11 @@ const pageWidthMm = ref(210)
 
 const scale = ref(0.5)
 
-const ZOOM_OPTIONS = [
-  { label: '适应宽度', value: 0 },
-  { label: '50%', value: 0.5 },
-  { label: '75%', value: 0.75 },
-  { label: '100%', value: 1 },
-  { label: '125%', value: 1.25 },
-  { label: '150%', value: 1.5 },
-]
+/** 缩放范围：下限与 fitWidth 的 0.2 一致，上限 200% */
+const SCALE_MIN = 0.2
+const SCALE_MAX = 2
+const SCALE_STEP = 0.25
+const clampScale = (v: number): number => Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(v * 100) / 100))
 
 const warningCount = computed(() => warnings.value.length)
 
@@ -78,6 +74,8 @@ const WARNING_LABEL: Record<RenderWarning['code'], string> = {
   SIGNATURE_EMPTY: '签名为空',
   PAGE_LIMIT_REACHED: '触达页数上限',
   ROW_TOO_TALL: '行高超页',
+  LABEL_GRID_DATA_MISSING: '标签数据源缺失',
+  LABEL_GRID_DATA_EMPTY: '标签数据为空',
 }
 
 /* ------------------------------- 渲染 ------------------------------- */
@@ -134,12 +132,29 @@ function fitWidth(): void {
   if (!host) return
   const avail = host.clientWidth - 40
   const pagePx = mmToPx(pageWidthMm.value)
-  if (avail > 0 && pagePx > 0) scale.value = Math.max(0.2, Math.round((avail / pagePx) * 100) / 100)
+  if (avail > 0 && pagePx > 0) scale.value = clampScale(Math.max(0.2, Math.round((avail / pagePx) * 100) / 100))
 }
 
-function onZoomSelect(v: number): void {
-  if (v === 0) fitWidth()
-  else scale.value = v
+/** 按固定步长（25%）缩放：dir=1 放大 / -1 缩小 */
+function zoomBy(dir: 1 | -1): void {
+  scale.value = clampScale(scale.value + dir * SCALE_STEP)
+}
+
+/** Ctrl / ⌘ + 滚轮缩放：在 iframe 内容窗口上捕获，阻止浏览器页面缩放 */
+function onPreviewWheel(e: WheelEvent): void {
+  if (!(e.ctrlKey || e.metaKey)) return
+  e.preventDefault()
+  e.stopPropagation()
+  zoomBy(e.deltaY > 0 ? -1 : 1)
+}
+
+/** iframe 重新加载（srcdoc 变化）后 window 是新的，需要重新挂载 wheel 监听 */
+let wheelWin: Window | null = null
+function attachPreviewWheel(): void {
+  const win = iframeRef.value?.contentWindow
+  if (!win || win === wheelWin) return
+  wheelWin = win
+  win.addEventListener('wheel', onPreviewWheel, { passive: false })
 }
 
 watch(scale, applyScale)
@@ -176,6 +191,7 @@ function syncCurrentPage(): void {
 function onIframeLoad(): void {
   applyScale()
   injectFonts()
+  attachPreviewWheel()
   const win = iframeRef.value?.contentWindow
   win?.addEventListener('scroll', syncCurrentPage, { passive: true })
 }
@@ -264,18 +280,6 @@ function close(): void {
 
           <div class="bar-sep" />
 
-          <!-- 缩放 -->
-          <NSelect
-            :value="scale"
-            :options="ZOOM_OPTIONS"
-            size="small"
-            style="width: 88px"
-            :consistent-menu-width="false"
-            @update:value="onZoomSelect"
-          />
-
-          <div class="bar-sep" />
-
           <!-- 告警 -->
           <NPopover v-if="warningCount" placement="bottom-end" trigger="click">
             <template #trigger>
@@ -324,6 +328,16 @@ function close(): void {
             @load="onIframeLoad"
           />
         </NSpin>
+
+        <!-- 右下角缩放：适应宽度 / − / 百分比 / +（步长 25%，Ctrl+滚轮同样生效） -->
+        <div class="preview-zoom">
+          <button type="button" class="zoom-btn" title="适应宽度" @click="fitWidth">
+            <div class="i-carbon-fit-to-width text-14px" />
+          </button>
+          <button type="button" class="zoom-btn" title="缩小 25%" @click="zoomBy(-1)">−</button>
+          <span class="zoom-value">{{ Math.round(scale * 100) }}%</span>
+          <button type="button" class="zoom-btn" title="放大 25%" @click="zoomBy(1)">+</button>
+        </div>
       </div>
     </div>
   </NModal>
@@ -382,6 +396,56 @@ function close(): void {
   justify-content: center;
   color: var(--brand-text-2);
   text-align: center;
+}
+
+/* 右下角缩放控件（适应宽度 / − / 百分比 / +） */
+.preview-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--brand-surface);
+  border: 1px solid var(--brand-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.zoom-btn:hover {
+  background: var(--brand-bg-hover);
+  color: var(--brand-text-1);
+}
+
+.zoom-value {
+  min-width: 48px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-text-1);
+  text-align: center;
+  user-select: none;
 }
 
 .warn-list {

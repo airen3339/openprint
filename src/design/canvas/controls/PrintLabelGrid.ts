@@ -49,6 +49,8 @@ export class PrintLabelGrid extends FabricImage implements IPrintObject {
   cardHeight?: number
   showLines = true
   lineStyle?: 'solid' | 'dashed'
+  /** 可选逐卡数据源数组路径（如 items），见 LabelGridControl.dataSource */
+  dataSource?: string
   children: AnyControl[]
 
   constructor(control: LabelGridControl) {
@@ -67,6 +69,7 @@ export class PrintLabelGrid extends FabricImage implements IPrintObject {
     this.cardHeight = control.cardHeight
     this.showLines = control.showLines ?? true
     this.lineStyle = control.lineStyle
+    this.dataSource = control.dataSource
     this.children = control.children ?? []
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf
@@ -259,6 +262,7 @@ export class PrintLabelGrid extends FabricImage implements IPrintObject {
       cardHeight: this.cardHeight,
       showLines: this.showLines,
       lineStyle: this.lineStyle,
+      dataSource: this.dataSource,
       children: this.children,
       printable: this.printable,
       visibleIf: this.visibleIf,
@@ -274,6 +278,7 @@ export class PrintLabelGrid extends FabricImage implements IPrintObject {
     this.cardHeight = control.cardHeight
     this.showLines = control.showLines ?? true
     this.lineStyle = control.lineStyle
+    this.dataSource = control.dataSource
     this.children = control.children ?? []
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf

@@ -3,7 +3,7 @@
  * AiAssistantPanel —— 纯前端 AI 设计助手对话面板（右侧抽屉）。
  * 一次性问答、零后端；配置来自本地（ai-settings）。生成的模板可直接「应用到画布」。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NDrawer, NDrawerContent, NInput, useDialog, useMessage } from 'naive-ui'
 import { useDesignerStore } from '@/design/stores/designer'
 import { isAiConfigured, readAiSettings } from '@/config/ai-settings'
@@ -55,6 +55,17 @@ const selectedControls = computed<AnyControl[]>(() =>
 const hasSelection = computed(() => selectedControls.value.length > 0)
 // 渐进呈现用的定时器句柄（流式或缓冲端点都走同一套打字动画）
 let revealTimer: ReturnType<typeof setInterval> | 0 = 0
+
+// 组件卸载（关闭抽屉）时强制清理：中止未完成的请求 + 清掉打字定时器，
+// 否则流式进行中关闭面板会让 setInterval 与 fetch 泄漏、持续占用资源。
+onBeforeUnmount(() => {
+  abortRef.value?.abort()
+  streaming.value = false
+  if (revealTimer) {
+    clearInterval(revealTimer)
+    revealTimer = 0
+  }
+})
 
 const configured = computed(() => isAiConfigured())
 const currentTemplate = computed<TemplateData<AnyControl> | undefined>(() =>

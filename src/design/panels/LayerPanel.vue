@@ -105,12 +105,18 @@ function move(id: string, dir: 'up' | 'down'): void {
   border-radius: 6px;
   cursor: pointer;
   color: var(--brand-text-2);
-  transition: background 0.15s;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-.layer-item:hover,
-.layer-item.selected {
-  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+.layer-item:hover {
+  background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
   color: var(--brand-primary);
+}
+.layer-item.selected {
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--brand-primary);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 0 var(--brand-primary);
 }
 .layer-actions {
   display: flex;

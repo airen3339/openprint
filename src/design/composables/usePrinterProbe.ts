@@ -70,8 +70,10 @@ async function probe(): Promise<boolean> {
       health.value = await checkHealth(base)
       printers.value = await listPrinters(base)
       state.value = 'connected'
-      // 客户端连接成功 → 顺手加载电脑系统字体清单（失败不阻塞连接状态）
-      void useSystemFonts().load().catch(() => {})
+      // 客户端连接成功 → 顺手加载电脑系统字体清单（失败不阻塞连接状态）。
+      // 用 loadIfStale（60s TTL）而非 load：load 会向客户端拉全量字体清单 + 逐个 FontFace 拉字体文件，
+      // 每次 probe 都全量拉会占满客户端连接，导致紧随其后的 /health /printers 探测超时（流水标签面板"打开即断开"）。
+      void useSystemFonts().loadIfStale().catch(() => {})
       return true
     } catch (e) {
       health.value = null

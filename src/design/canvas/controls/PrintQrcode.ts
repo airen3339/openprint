@@ -16,6 +16,8 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
 
   binding?: string
   textValue?: string
+  exprValue?: string
+  contentType?: 'fixed' | 'variable' | 'expression'
   errorLevel: 'L' | 'M' | 'Q' | 'H' = 'M'
 
   constructor(control: QrcodeControl) {
@@ -27,8 +29,10 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
       lockMovementY: control.locked,
     })
     this.controlId = control.id
+    this.contentType = control.contentType
     this.binding = control.binding
     this.textValue = control.value
+    this.exprValue = control.expression
     this.errorLevel = control.errorLevel ?? 'M'
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf
@@ -37,11 +41,20 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
     void this.regenerate()
   }
 
+  /** 设计期占位文本：按 contentType 取对应字段 */
+  private displayValue(): string | undefined {
+    const m = this.contentType
+    if (m === 'expression') return this.exprValue
+    if (m === 'variable') return this.binding ? `{{${this.binding}}}` : undefined
+    if (m === 'fixed') return this.textValue
+    return this.textValue ?? (this.binding ? `{{${this.binding}}}` : undefined)
+  }
+
   async regenerate(): Promise<void> {
     // 目标显示尺寸（逻辑 px）；setElement 会重置 width/height，先保存
     const targetW = this.getScaledWidth() || 1
     const targetH = this.getScaledHeight() || 1
-    const text = this.textValue ?? (this.binding ? `{{${this.binding}}}` : 'https://open-print.dev')
+    const text = this.displayValue() ?? 'https://open-print.dev'
     const canvas = document.createElement('canvas')
     try {
       await QRCode.toCanvas(canvas, text, {
@@ -67,8 +80,10 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
     return {
       ...readBaseGeometry(this),
       type: 'qrcode',
+      contentType: this.contentType,
       binding: this.binding,
       value: this.textValue,
+      expression: this.exprValue,
       errorLevel: this.errorLevel,
       printable: this.printable,
       visibleIf: this.visibleIf,
@@ -77,8 +92,10 @@ export class PrintQrcode extends FabricImage implements IPrintObject {
   }
 
   applyControlProps(control: QrcodeControl): void {
+    this.contentType = control.contentType
     this.binding = control.binding
     this.textValue = control.value
+    this.exprValue = control.expression
     this.errorLevel = control.errorLevel ?? 'M'
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf

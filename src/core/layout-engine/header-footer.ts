@@ -44,7 +44,12 @@ export function computePageMetrics(
 
   const headerHeight = headerSection ? toMm(headerSection.height ?? 0, unit) : 0
   const footerHeight = footerSection ? toMm(footerSection.height ?? 0, unit) : 0
-  // Word 式布局：页眉/页脚位于上下边距内；正文区 = contentHeight，不扣除页眉/页脚
+  // 正文可用高基准（流式表格切页预算）：沿用「页高 - 上下边距」。
+  // 说明：边距对「绝对定位控件」已完全不参与渲染偏移（见 css-generator / CanvasDesigner），
+  // 但对绑定了数据源的流式表格，保留内容区高度作为切页预算可避免末页出现空白尾页（回归），
+  // 且表格 top 现已为整页相对坐标，顶部偏移问题同样解决。
+  // 页眉/页脚色带占位（headerHeight/footerHeight）不在 metrics 层扣除，
+  // 由 paginateFlowTable 按页裁剪：非首页切片从页眉下方起、每页可用高 = 页高 - 页眉 - 页脚。
   const bodyHeight = contentHeight
 
   return {

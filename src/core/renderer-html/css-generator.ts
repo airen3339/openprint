@@ -205,7 +205,7 @@ export function generateCss(metrics: PageMetrics, options: CssOptions = {}): str
   const screen = options.screen ?? true
   const scale = options.scale ?? 1
   const pageBg = options.pageDecoration?.backgroundColor ?? '#ffffff'
-  const { pageWidth, pageHeight, margin, contentWidth, contentHeight } = metrics
+  const { pageWidth, pageHeight } = metrics
 
   return `
 /* ============ OpenPrint 渲染样式（自动生成，勿手改） ============ */
@@ -273,27 +273,27 @@ html, body {
   white-space: nowrap;
 }
 
-/* Word 式布局：正文独占边距间内容区；页眉/页脚在上下边距内，作为 .op-page 的直接子元素 */
+/* 整页相对坐标：正文控件直接相对物理页 0,0 定位；边距仅作可视化参考线，不参与渲染偏移 */
 .op-content {
   position: absolute;
-  left: ${mmv(margin.left)};
-  top: ${mmv(margin.top)};
-  width: ${mmv(contentWidth)};
-  /* 延伸到页底：正文控件可自由落进下边距区（边距只作设计辅助，整页渲染不裁剪） */
-  height: ${mmv(pageHeight - margin.top)};
+  left: ${mmv(0)};
+  top: ${mmv(0)};
+  width: ${mmv(pageWidth)};
+  /* 正文区 = 整页：控件可落在任意位置（含原边距带），所见即所得 */
+  height: ${mmv(pageHeight)};
 }
 
 .op-section {
   position: absolute;
-  width: ${mmv(contentWidth)};
-  /* 不裁剪：页边距只作设计辅助/拖动限制，渲染时边距外内容也必须可见（所见即所得） */
+  width: ${mmv(pageWidth)};
+  /* 不裁剪：边距只作设计辅助参考线，渲染时边距内/外内容均可见（所见即所得） */
   overflow: visible;
 }
-/* 页眉/页脚：直接挂在 .op-page 上，左右贴边距 */
-.op-header { top: 0; left: ${mmv(margin.left)}; height: ${mmv(metrics.headerHeight)}; }
-.op-footer { bottom: 0; left: ${mmv(margin.left)}; height: ${mmv(metrics.footerHeight)}; }
-/* 正文：填满 .op-content，不再重复叠加边距 */
-.op-body { top: 0; left: 0; width: 100%; height: 100%; }
+/* 页眉/页脚：直接挂在 .op-page 上，整页相对（左右贴物理页边） */
+.op-header { top: ${mmv(0)}; left: ${mmv(0)}; height: ${mmv(metrics.headerHeight)}; }
+.op-footer { bottom: ${mmv(0)}; left: ${mmv(0)}; height: ${mmv(metrics.footerHeight)}; }
+/* 正文：填满 .op-content（整页），不再叠加边距偏移 */
+.op-body { top: ${mmv(0)}; left: ${mmv(0)}; width: 100%; height: 100%; }
 
 /* -------------------------------- 控件 -------------------------------- */
 
@@ -343,7 +343,9 @@ html, body {
 .op-image { display: block; }
 .op-image > img { display: block; width: 100%; height: 100%; }
 
-/* 条码 / 二维码：SVG 矢量填满控件框 */
+/* 条码 / 二维码：SVG 矢量填满控件框（宽高独立，所见即所得）。
+   条码的 preserveAspectRatio="none" 由 data-binder 注入 SVG 自身（自然尺寸≈控件尺寸，拉伸量≈1）；
+   二维码保留默认 contain（100%×100% meet）居中。 */
 .op-code > svg { display: block; width: 100%; height: 100%; }
 
 .op-line > span {

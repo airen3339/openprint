@@ -93,6 +93,7 @@
         "name": { "type": "string" },
         "binding": { "type": "string" },
         "expression": { "type": "string" },
+        "contentType": { "enum": ["fixed", "variable", "expression"] },
         "value": {},
         "style": {
           "type": "object",

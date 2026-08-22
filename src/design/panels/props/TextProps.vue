@@ -18,7 +18,8 @@ import { useDesignerStore } from '@/design/stores/designer'
 import { useDataSourceStore } from '@/design/stores/dataSource'
 import { FONT_CATALOG } from '@/core/fonts/catalog'
 import { useSystemFonts } from '@/core/fonts/system'
-import BindingEditor from './BindingEditor.vue'
+import ContentValueEditor from './ContentValueEditor.vue'
+import type { ContentMode } from './ContentValueEditor.vue'
 import {
   formatKindOptions,
   datePatternOptions,
@@ -76,18 +77,23 @@ function toggleUnderline(): void {
   patchStyle({ textDecoration: isUnderline.value ? 'none' : 'underline' })
 }
 
-/** 内容模式：静态文本 / 字段绑定 / 表达式（三选一） */
-const contentMode = computed({
-  get: () =>
-    control.value?.expression ? 'expression' : control.value?.binding ? 'binding' : 'static',
-  set: (mode: string) => {
-    if (!control.value) return
-    if (mode === 'static') patch({ binding: undefined, expression: undefined })
-    else if (mode === 'binding')
-      patch({ binding: control.value.binding ?? 'order.orderNo', expression: undefined })
-    else patch({ expression: control.value.expression ?? '{{order.total}}', binding: undefined })
-  },
+/** 内容类型：固定值 / 变量（字段绑定） / 表达式（显式 contentType 判别，兼容老模板回退） */
+const contentMode = computed<ContentMode>(() => {
+  const c = control.value
+  if (c?.contentType) return c.contentType
+  return c?.expression ? 'expression' : c?.binding ? 'variable' : 'fixed'
 })
+
+/** 模式切换：写 contentType + 清空其它两个字段（默认值由 ContentValueEditor 注入） */
+function onModeChange(m: ContentMode): void {
+  if (!control.value) return
+  if (m === 'fixed')
+    patch({ contentType: 'fixed', binding: undefined, expression: undefined })
+  else if (m === 'variable')
+    patch({ contentType: 'variable', expression: undefined })
+  else
+    patch({ contentType: 'expression', binding: undefined })
+}
 
 /* -------------------------------- 数据格式 -------------------------------- */
 /* 仅绑定模式生效：expression 模式请用 {{field | date:'...'}} 过滤器，不在此重复设置。 */
@@ -129,29 +135,22 @@ function isPresetDatePattern(p?: string): boolean {
   <div v-if="control" class="props-section">
     <div class="props-title">内容设置</div>
 
-    <div class="props-row">
-      <span class="props-label">类型</span>
-      <NRadioGroup v-model:value="contentMode" size="small">
-        <NRadioButton value="static">静态</NRadioButton>
-        <NRadioButton value="binding">绑定</NRadioButton>
-        <NRadioButton value="expression">表达式</NRadioButton>
-      </NRadioGroup>
-    </div>
+    <ContentValueEditor
+      :mode="contentMode"
+      :value="control.value ?? ''"
+      :binding="control.binding ?? ''"
+      :expression="control.expression ?? ''"
+      placeholder="文本内容"
+      fixed-default="文本"
+      binding-default="order.orderNo"
+      :expression-default="'{{order.total}}'"
+      @update:mode="onModeChange"
+      @update:value="patch({ value: $event })"
+      @update:binding="patch({ binding: $event })"
+      @update:expression="patch({ expression: $event || undefined })"
+    />
 
-    <div v-if="contentMode === 'static'" class="props-row">
-      <NInput
-        type="textarea"
-        size="small"
-        :autosize="{ minRows: 3, maxRows: 4 }"
-        :value="control.value ?? ''"
-        placeholder="文本内容"
-        @update:value="patch({ value: $event })"
-      />
-    </div>
-    <div v-else-if="contentMode === 'binding'" class="props-row">
-      <BindingEditor :value="control.binding" @update:value="patch({ binding: $event })" />
-    </div>
-    <div v-if="contentMode === 'binding'" class="props-section">
+    <div v-if="contentMode === 'variable'" class="props-section">
       <div class="props-title">数据格式</div>
 
       <div v-if="formatHint" class="props-tip">{{ formatHint }}</div>
@@ -225,14 +224,6 @@ function isPresetDatePattern(p?: string): boolean {
       </div>
 
       <NButton size="tiny" quaternary @click="patch({ format: undefined })">清除格式</NButton>
-    </div>
-    <div v-else class="props-row">
-      <NInput
-        size="small"
-        :value="control.expression ?? ''"
-        placeholder="{{order.total | currency:'CNY'}}"
-        @update:value="patch({ expression: $event || undefined })"
-      />
     </div>
   </div>
 

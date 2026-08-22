@@ -6,8 +6,10 @@
  * 2. Phase 7 分页引擎的活体验收：明细行调到 30+ 行必然跨页，
  *    可直接检查「表头每页重复 / 页眉页脚每页出现 / 合计只在末页 / 页码正确」
  *
- * 坐标全部 mm，相对所属 section 左上角（协议约定）。
- * A4 纵向 210×297，左右边距 12 → 内容区宽 186，所有横向元素按 186 对齐。
+ * 坐标全部 mm（整页相对坐标模型，§协议）：
+ * - body 控件相对物理页左上角 (0,0)——页边距仅作可视化参考线，不参与渲染/导出偏移；
+ * - header/footer 子控件相对各自色带左上角。
+ * A4 纵向 210×297，页面设 12mm 边距，示例正文按「内容区宽 186」排布（视觉上落在边距参考线内）。
  */
 import type { AnyControl } from '@/types/control'
 import type { TemplateData } from '@/types/template'
@@ -24,7 +26,7 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     {
       id: 'hd-company',
       type: 'text',
-      left: 0,
+      left: 12,
       top: 0,
       width: 100,
       height: 6,
@@ -35,7 +37,7 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     {
       id: 'hd-title',
       type: 'text',
-      left: 0,
+      left: 12,
       top: 7,
       width: CONTENT_W,
       height: 11,
@@ -46,7 +48,7 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     {
       id: 'hd-barcode',
       type: 'barcode',
-      left: 140,
+      left: 152,
       top: 0,
       width: 46,
       height: 12,
@@ -58,7 +60,7 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     {
       id: 'hd-rule',
       type: 'line',
-      left: 0,
+      left: 12,
       top: 21,
       width: CONTENT_W,
       height: 0,
@@ -70,19 +72,19 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
 
   const body: AnyControl[] = [
     /* ── 单据头：仅第 1 页 ── */
-    txt('bd-no', 0, 0, 62, 6, '单号：{{order.orderNo}}'),
-    txt('bd-date', 62, 0, 62, 6, '日期：{{order.orderDate}}'),
-    txt('bd-salesman', 124, 0, 62, 6, '业务员：{{order.salesman}}'),
-    txt('bd-cust', 0, 7, 92, 6, '客户：{{customer.name}}'),
-    txt('bd-contact', 92, 7, 94, 6, '联系人：{{customer.contact}}　电话：{{customer.phone}}'),
-    txt('bd-addr', 0, 14, CONTENT_W, 6, '收货地址：{{customer.address}}'),
+    txt('bd-no', 12, 12, 62, 6, '单号：{{order.orderNo}}'),
+    txt('bd-date', 74, 12, 62, 6, '日期：{{order.orderDate}}'),
+    txt('bd-salesman', 136, 12, 62, 6, '业务员：{{order.salesman}}'),
+    txt('bd-cust', 12, 19, 92, 6, '客户：{{customer.name}}'),
+    txt('bd-contact', 104, 19, 94, 6, '联系人：{{customer.contact}}　电话：{{customer.phone}}'),
+    txt('bd-addr', 12, 26, CONTENT_W, 6, '收货地址：{{customer.address}}'),
 
     /* ── 明细表：驱动分页 ── */
     {
       id: 'bd-table',
       type: 'table',
-      left: 0,
-      top: 23,
+      left: 12,
+      top: 35,
       width: CONTENT_W,
       height: 60,
       dataSource: 'items',
@@ -118,12 +120,12 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     },
 
     /* ── 单据尾：随表格实际底边下移，只在末页 ── */
-    txt('bd-total', 0, 85, CONTENT_W, 7, '合计金额（大写）：{{order.total | currency:"CNY"}}', {
+    txt('bd-total', 12, 97, CONTENT_W, 7, '合计金额（大写）：{{order.total | currency:"CNY"}}', {
       fontSize: 11,
       fontWeight: 'bold',
     }),
-    txt('bd-memo', 0, 93, 120, 6, '备注：{{order.memo}}', { fontSize: 9, fill: '#555555' }),
-    txt('bd-sign', 0, 103, CONTENT_W, 6, '制单人：{{order.salesman}}　　审核：＿＿＿＿　　仓管：＿＿＿＿　　客户签收：＿＿＿＿', {
+    txt('bd-memo', 12, 105, 120, 6, '备注：{{order.memo}}', { fontSize: 9, fill: '#555555' }),
+    txt('bd-sign', 12, 115, CONTENT_W, 6, '制单人：{{order.salesman}}　　审核：＿＿＿＿　　仓管：＿＿＿＿　　客户签收：＿＿＿＿', {
       fontSize: 9,
     }),
   ]
@@ -132,7 +134,7 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
     {
       id: 'ft-rule',
       type: 'line',
-      left: 0,
+      left: 12,
       top: 1,
       width: CONTENT_W,
       height: 0,
@@ -140,8 +142,8 @@ export function createDemoTemplate(): TemplateData<AnyControl> {
       strokeWidth: 0.5,
       printable: true,
     },
-    txt('ft-brand', 0, 3, 90, 6, '本单据由 OpenPrint 生成', { fontSize: 8, fill: '#888888' }),
-    txt('ft-page', 96, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', {
+    txt('ft-brand', 12, 3, 90, 6, '本单据由 OpenPrint 生成', { fontSize: 8, fill: '#888888' }),
+    txt('ft-page', 108, 3, 90, 6, '第 {{page}} 页 / 共 {{pages}} 页', {
       fontSize: 9,
       textAlign: 'right',
       fill: '#555555',

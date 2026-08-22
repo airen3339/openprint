@@ -114,6 +114,74 @@ describe('buildTableModel —— 表格建模', () => {
     expect(dataCellText(c, { data: { items: [{ qty: 1234.5 }] } }, 0)).toBe('1,235')
   })
 
+  it('单元格显式三态：variable / expression / fixed 各按模式取值', () => {
+    // variable：cell.field 优先（即使列也有 field，也以单元格为准）
+    const c1 = {
+      ...control,
+      columns: [{ field: 'name', title: '名称', width: 60 }],
+      cells: [
+        [{ text: '名称' }],
+        [{ contentType: 'variable', field: 'qty' }],
+      ],
+    } as unknown as Parameters<typeof buildTableModel>[0]['control']
+    expect(dataCellText(c1, { data: { items: [{ name: 'A', qty: 7 }] } }, 0)).toBe('7')
+
+    // expression：行表达式求值（作用域含 row / rowIndex）
+    const c2 = {
+      ...control,
+      columns: [{ field: 'name', title: '名称', width: 60 }],
+      cells: [
+        [{ text: '名称' }],
+        [{ contentType: 'expression', expression: '{{row.qty * 2}}' }],
+      ],
+    } as unknown as Parameters<typeof buildTableModel>[0]['control']
+    expect(dataCellText(c2, { data: { items: [{ qty: 3 }] } }, 0)).toBe('6')
+
+    // fixed：固定文字（即使列有 field 也不走绑定）
+    const c3 = {
+      ...control,
+      columns: [{ field: 'name', title: '名称', width: 60 }],
+      cells: [
+        [{ text: '名称' }],
+        [{ contentType: 'fixed', text: 'N/A' }],
+      ],
+    } as unknown as Parameters<typeof buildTableModel>[0]['control']
+    expect(dataCellText(c3, { data: { items: [{ name: 'A' }] } }, 0)).toBe('N/A')
+  })
+
+  it('显式 fixed 模式 text 为空时回落列 field（不打断整列）', () => {
+    const c = {
+      ...control,
+      columns: [{ field: 'qty', title: '数量', width: 60 }],
+      cells: [
+        [{ text: '数量' }],
+        [{ contentType: 'fixed' }],
+      ],
+    } as unknown as Parameters<typeof buildTableModel>[0]['control']
+    expect(dataCellText(c, { data: { items: [{ qty: 5 }] } }, 0)).toBe('5')
+  })
+
+  it('表头/静态行显式三态：variable 绑字段 / expression 插值', () => {
+    const c = {
+      ...control,
+      dataSource: '',
+      headerRows: 1,
+      staticRows: 1,
+      cells: [
+        // 表头：variable 模式绑 order.no
+        [{ contentType: 'variable', field: 'order.no' }, { text: '数量' }],
+        // 静态尾行：expression 模式插值合计
+        [{ contentType: 'expression', expression: '{{order.total}}' }, { text: '' }],
+      ],
+    } as unknown as Parameters<typeof buildTableModel>[0]['control']
+    const ctx = { data: { order: { no: 'NO-001', total: 5 } } }
+    const model = buildTableModel({ control: c, ctx, measurer, widthMm: 100, heightMm: 50 })
+    expect(model.headerRows[0]!.cells[0]!.text).toBe('NO-001')
+    const staticRow = model.rows.find((r) => r.kind === 'static')
+    expect(staticRow).toBeTruthy()
+    expect(staticRow!.cells[0]!.text).toBe('5')
+  })
+
   it('表头/静态行绑定 cell.field 应解析主表标量（回归：staticCellText 曾忽略 field）', () => {
     const c = {
       ...control,
@@ -174,12 +242,13 @@ describe('sliceTable —— 分页切片（含空尾片回归）', () => {
     expect(slice.nextStart).toBe(3)
   })
 
-  it('空间不足时本页少放，nextStart 后移', () => {
+  it('空间不足时本页少放，nextStart 后移（行预算含 0.2mm 边框，防渲染溢出压页脚）', () => {
     const model = mkModel(5)
-    // 每页能放 2 行（header 8 + 2*8 = 24 ≤ avail 24；第 3 行 8 会使 32 > 24）
+    // 默认 borders:'all'：header 8+0.2、每行 8+0.2。avail=24 → budget=24-8.2=15.8，
+    // 仅放得下 1 行（1×8.2=8.2≤15.8；第 2 行 16.4>15.8）——宁少排一行，不压页脚。
     const slice = sliceTable(model, { avail: 24, start: 0 })
-    expect(slice.rows.length).toBe(2)
-    expect(slice.nextStart).toBe(2)
+    expect(slice.rows.length).toBe(1)
+    expect(slice.nextStart).toBe(1)
     expect(slice.isLast).toBe(false)
   })
 })

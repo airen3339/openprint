@@ -17,6 +17,8 @@ export interface BarcodeDrawOptions {
   barHeightMM?: number
   /** 上下留白（mm），给文字行呼吸空间，避免贴边 */
   paddingMM?: number
+  /** 目标宽度（mm）：bwip-js 据此调整条码条粗细（module width），宽度可独立控制且不变形。缺省按 scale 自然宽 */
+  widthMM?: number
 }
 
 /** 把 bwip-js 的 SVG 字符串栅格化到离屏 canvas（人眼可读数字以矢量路径渲染，天然可见） */
@@ -64,9 +66,12 @@ export async function drawBarcode(options: BarcodeDrawOptions): Promise<HTMLCanv
       text: options.text || '0123456789',
       scale: 2,
       height: barHeight,
+      // 目标宽度（mm）：bwip-js 会据此调整 module width，条码条粗细适配宽度且不变形。
+      // 注意 bwip-js 以 72dpi 换算像素，而宿主画布是 96dpi，宽度补偿见调用方。
+      ...(options.widthMM ? { width: options.widthMM } : {}),
       paddingtop: padding,
       paddingbottom: padding,
-      includetext: options.showText ?? false,
+      includetext: options.showText ?? true,
       textxalign: 'center',
       // BWIPP textsize（单位 point，默认 9），调到 12 让人眼可读数字更醒目
       textsize: 12,

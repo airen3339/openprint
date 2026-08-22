@@ -81,6 +81,44 @@ html.dark {
 }
 
 /* =========================================================================
+ * SVIP 黑金主题（点击左上角版本号切换，ui store 同时给 html 加 .dark + .svip）
+ *   - 背景：#3E4144  金色渐变：#FFB95A → #E4A93C → #B87100  小灰字：#C0C4CC
+ *   - 黑金 = 暗色基座 + 金色主色覆盖；放在 html.dark 之后以保证覆盖优先级
+ * ========================================================================= */
+html.svip {
+  /* 主色 · 黑金用金色系 */
+  --brand-primary: #E4A93C;
+  --brand-primary-hover: #FFB95A;
+  --brand-primary-pressed: #B87100;
+
+  /* 表面 · 用户指定背景 #3E4144，表面略亮形成层次 */
+  --brand-bg: #3E4144;
+  --brand-surface: #484C50;
+  --brand-border: #585C61;
+
+  /* 文字 · 主文字暖金白，小灰字 #C0C4CC */
+  --brand-text-1: #F2E6C9;
+  --brand-text-2: #C0C4CC;
+  --brand-text-3: #9AA0A6;
+  --brand-text-muted: #C0C4CC;
+
+  /* 顶栏 · 黑金：深炭底 + 金色文字/图标 */
+  --brand-nav-bg: #33363A;
+  --brand-nav-bg-hover: rgba(255, 185, 90, 0.1);
+  --brand-nav-text: #F2E6C9;
+  --brand-nav-text-muted: #C0C4CC;
+  --brand-nav-text-active: #FFB95A;
+  --brand-nav-icon: #C0C4CC;
+  --brand-nav-icon-hover: #FFB95A;
+
+  --brand-dark: var(--brand-nav-bg);
+
+  --op-canvas-bg: #3E4144;
+  --op-canvas-checker-a: #484C50;
+  --op-canvas-checker-b: #3E4144;
+}
+
+/* =========================================================================
  * NSelect 下拉菜单对比度兜底
  *
  * 下拉菜单（.n-base-select-menu）由 naive-ui teleport 到 <body>，脱离了组件
@@ -124,4 +162,34 @@ html.dark {
 .n-base-select-menu .n-base-select-option--disabled,
 .n-base-select-menu .n-base-select-option--disabled .n-base-select-option__content {
   color: var(--brand-text-3) !important;
+}
+
+/* =========================================================================
+ * NTabs segment 类型·选中态对比度兜底
+ *
+ * 浅色下 surface 是纯白 #FFFFFF，segment 轨道是很浅的灰，激活态默认是
+ * 「白药丸浮在浅灰轨上」，白底面板/弹窗里几乎看不出当前选中哪个 tab。
+ *
+ * 这里统一把激活药丸做成：表面底色 + 浮起阴影 + 主色 1px 描边 + 主色加粗文字，
+ * 轨道改用 --brand-bg 与表面形成对比。亮/暗主题均适用，覆盖左侧面板与
+ * 表达式弹窗等所有 type="segment" 的 Tab。
+ * ========================================================================= */
+.n-tabs-nav--segment-type {
+  background-color: var(--brand-bg) !important;
+  padding: 3px !important;
+  border-radius: 8px !important;
+}
+.n-tabs-nav--segment-type .n-tabs-tab {
+  font-weight: 500;
+}
+.n-tabs-nav--segment-type .n-tabs-tab--active {
+  background-color: var(--brand-surface) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-primary) 50%, transparent),
+    0 1px 4px rgba(0, 0, 0, 0.14) !important;
+  color: var(--brand-primary) !important;
+  font-weight: 600 !important;
+}
+.n-tabs-nav--segment-type .n-tabs-tab--active .n-tabs-tab__label {
+  color: var(--brand-primary) !important;
 }

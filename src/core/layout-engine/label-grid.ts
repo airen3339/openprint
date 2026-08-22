@@ -100,8 +100,7 @@ export function visibleCardRows(heightUnit: number, geo: GridGeometry): number {
 
 /* ------------------------------- 展开主流程 ------------------------------- */
 
-/** 生成控件 id → 所属卡片的行上下文（标签网格为纯布局组件，此表恒空；
- *  保留类型与注入点，供未来「卡内数据组件」驱动逐卡行数据时复用，不污染协议模型） */
+/** 生成控件 id → 所属卡片的行上下文（配置 dataSource 时逐卡写入；否则恒空=纯布局平铺） */
 export type RowCtxMap = Map<string, { row: Record<string, unknown>; rowIndex: number }>
 
 /** 单条网格参考线 + 它落在第几页（page-relative 坐标已在 GridLine 内） */
@@ -121,18 +120,37 @@ export interface ExpandResult {
   gridLines: GridLinePlacement[]
 }
 
-/** 分页步长（mm）：与 layoutStaticOnly 的按位置切页保持同一真理源 */
+/** 分页步长（mm）：与 layoutStaticOnly 的按位置切页保持同一真理源（整页相对模型 = 物理页高） */
 export function bodyStepMm(metrics: PageMetrics): number {
-  return Math.max(1, metrics.pageHeight - metrics.margin.top)
+  // 边距仅作可视化参考线，不再参与分页：整页高作为分页步长
+  return Math.max(1, metrics.pageHeight)
+}
+
+/**
+ * 解析标签网格的逐卡数据数组（dataSource = 数据根对象上的数组路径，如 `items`）。
+ * - 未配置 dataSource → null（纯布局平铺）
+ * - 配置了但取值不是数组 → null（调用方告警后回退纯布局平铺）
+ * - 数组为空 → []（调用方告警后回退纯布局平铺）
+ */
+function gridDataArray(
+  dataSource: string | undefined,
+  ctx: EvalContext,
+): Array<Record<string, unknown>> | null {
+  if (!dataSource) return null
+  const v = (ctx.data ?? {})[dataSource]
+  return Array.isArray(v) ? (v as Array<Record<string, unknown>>) : null
 }
 
 /**
  * 把正文里的 labelgrid 全部展开为绝对定位的普通控件。
  *
- * 纯布局平铺：总卡片数 = 列数 × 行数（行数由容器高度推导，即属性面板「行数」），
- * 跨页自洽；children 被**完全相同地**重复 N 份（无逐卡数据绑定）。
+ * - 纯布局平铺（无 dataSource）：总卡片数 = 列数 × 行数（行数由容器高度推导，即属性面板「行数」），
+ *   children 被**完全相同地**重复 N 份。
+ * - 逐卡数据绑定（有 dataSource）：卡片总数 = 数据条数（每数据一条卡，跨页自洽），
+ *   每张卡向 rowCtx 写入 { row: data[cardIndex], rowIndex: cardIndex }，
+ *   卡内控件绑定 `{{row.字段}}` / `{{rowIndex + 1}}` 逐卡求值 → 每卡内容不同。
  *
- * @param bodyStep 分页步长（mm）= 页高 - 上边距，见 bodyStepMm
+ * @param bodyStep 分页步长（mm）= 物理页高，见 bodyStepMm
  * @param maxPages 最大页数保护（同时兜住超大行数）
  */
 export function expandLabelGrids(
@@ -158,6 +176,23 @@ export function expandLabelGrids(
     // 整个网格被条件渲染关掉 / 不打印 → 整体跳过
     if (!isControlPrintable(control, ctx)) continue
 
+    // 逐卡数据源：配置后按数据条数平铺，每卡注入行上下文
+    const dataArr = gridDataArray(control.dataSource, ctx)
+    if (control.dataSource && dataArr === null) {
+      warnings.push({
+        code: 'LABEL_GRID_DATA_MISSING',
+        message: `标签网格数据源「${control.dataSource}」不存在或不是数组，已按纯布局平铺`,
+        controlId: control.id,
+      })
+    } else if (control.dataSource && dataArr !== null && dataArr.length === 0) {
+      warnings.push({
+        code: 'LABEL_GRID_DATA_EMPTY',
+        message: `标签网格数据源「${control.dataSource}」为空，已按纯布局平铺（卡内绑定为空）`,
+        controlId: control.id,
+      })
+    }
+    const dataCount = dataArr !== null && dataArr.length > 0 ? dataArr.length : 0
+
     const children = control.children.filter(
       (c) => c.type !== 'zone' && c.type !== 'labelgrid',
     )
@@ -174,9 +209,10 @@ export function expandLabelGrids(
     const cardH = toMm(geo.cardHeight, unit)
     const stepY = cardH + gapY
 
-    // 总卡片数 = 列数 × 行数（行数由容器高度推导）
+    // 总卡片数：配置了逐卡数据源 → 跟随数据条数（每数据一条卡，跨页自洽）；
+    // 否则 = 列数 × 行数（行数由容器高度推导）纯布局平铺
     const totalRows = Math.max(1, visibleCardRows(control.height ?? 0, geo))
-    const total = geo.columns * totalRows
+    const total = dataCount > 0 ? dataCount : geo.columns * totalRows
     if (total <= 0) continue
 
     const showLines = control.showLines !== false
@@ -249,7 +285,10 @@ export function expandLabelGrids(
             left: fromMm(cardLeft + toMm(child.left, unit), unit),
             top: fromMm(rowTop + toMm(child.top, unit), unit),
           } as AnyControl)
-          // 纯布局平铺：不写入行上下文（行数据由卡内数据组件提供）
+          // 逐卡数据绑定：按卡片索引注入行上下文（卡内控件绑定 {{row.字段}} / {{rowIndex}} 逐卡求值）
+          if (dataArr) {
+            rowCtx.set(genId, { row: dataArr[cardIndex] ?? {}, rowIndex: cardIndex })
+          }
         }
         cardIndex++
       }

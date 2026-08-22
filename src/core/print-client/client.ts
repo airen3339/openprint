@@ -24,8 +24,12 @@ import {
 /** 出厂默认地址（用户未配置时使用） */
 export const DEFAULT_PRINTER_BASE_URL = 'http://127.0.0.1:18888'
 
-/** 探测类请求默认超时（ms）—— 本机服务，短超时快速失败 */
-export const PROBE_TIMEOUT_MS = 3000
+/**
+ * 探测类请求默认超时（ms）。
+ * 3s → 6s：本地客户端在字体加载 / 打印机枚举期间可能短暂忙碌（Qt 单连接服务排队），
+ * 太短会把正常的探测误判为超时，导致"连接好了却显示断开"。
+ */
+export const PROBE_TIMEOUT_MS = 6000
 
 /** 提交打印任务默认超时（ms）—— 大文档 base64 传输留足时间 */
 export const SUBMIT_TIMEOUT_MS = 30000

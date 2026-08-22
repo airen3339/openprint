@@ -84,7 +84,7 @@ export const useDesignerStore = defineStore('designer', () => {
   const backendMode = ref<'local' | 'cloud'>('local')
   /** 画布网格配置（运行时视图状态，辅助设计，不持久化） */
   const gridConfig = ref<GridConfig>({ ...DEFAULT_GRID })
-  /** 页边距锁定：默认开启，正文控件严格限制在边距内移动；关闭后可自由移动（边距仅作参考线） */
+  /** 页边距锁定：默认开启，正文控件限制在边距内移动（设计安全区）；关闭后可自由移动（边距仅参考线） */
   const marginLocked = ref(true)
 
   /**
@@ -847,7 +847,7 @@ export const useDesignerStore = defineStore('designer', () => {
     }
   }
 
-  /** 设置页边距锁定：锁定=正文控件限制在边距内移动；关闭=可自由移动（边距仅参考线） */
+  /** 设置页边距锁定：锁定=正文控件限制在边距内移动（设计安全区）；关闭=可自由移动（边距仅参考线） */
   function setMarginLocked(locked: boolean): void {
     marginLocked.value = locked
     designer.value?.setMarginLocked(locked)
@@ -1163,7 +1163,7 @@ function createDefaultControl(
   }
   switch (type) {
     case 'text':
-      return { ...base, type, width: 50, height: 8, value: '文本', style: { fontSize: 12 } }
+      return { ...base, type, width: 50, height: 8, contentType: 'fixed', value: '文本', style: { fontSize: 12 } }
     case 'image':
       return { ...base, type, width: 40, height: 25, value: { mode: 'inline', content: '' }, fit: 'contain' }
     case 'table':
@@ -1202,9 +1202,9 @@ function createDefaultControl(
     case 'barcode':
       // 高度 30mm ≈ 113px：足够容纳 bwip-js 条码条（约 21mm）+ 文字行 + 上下留白，
       // 避免默认 15mm 时文字行被 scaleY 压扁到看不见。
-      return { ...base, type, width: 60, height: 30, format: 'CODE128', showText: true }
+      return { ...base, type, width: 60, height: 30, contentType: 'fixed', format: 'CODE128', showText: true }
     case 'qrcode':
-      return { ...base, type, width: 25, height: 25, errorLevel: 'M' }
+      return { ...base, type, width: 25, height: 25, contentType: 'fixed', errorLevel: 'M' }
     case 'rect':
       return { ...base, type, width: 40, height: 25, fill: 'transparent', stroke: '#000000', strokeWidth: 1 }
     case 'line':

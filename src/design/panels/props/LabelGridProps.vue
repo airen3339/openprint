@@ -2,11 +2,12 @@
 /**
  * LabelGridProps —— 标签网格属性面板
  *
- * 一张纸平铺 N 张相同标签卡的**纯布局控制台**：列数、行数、间距、卡片尺寸、网格线开关与线型。
- * 标签网格不带数据源——每张卡印什么数据由放进卡里的其他数据组件决定。
+ * 一张纸平铺 N 张标签卡的**纯布局控制台**：列数、行数、间距、卡片尺寸、网格线开关与线型。
+ * 可选「数据源」数组路径（如 items）：配置后卡片数跟随数据条数，每卡注入 {row,rowIndex}，
+ * 卡内控件绑定 {{row.字段}} / {{rowIndex + 1}} 逐卡不同（流水号/条码/二维码）。
  */
 import { computed } from 'vue'
-import { NButton, NInputNumber, NSelect, NText, NTooltip, NSwitch } from 'naive-ui'
+import { NButton, NInput, NInputNumber, NSelect, NText, NTooltip, NSwitch } from 'naive-ui'
 import type { LabelGridControl } from '@/types/control'
 import { useDesignerStore } from '@/design/stores/designer'
 import { resolveGridGeometry, labelCardBounds } from '@/core/layout-engine/label-grid'
@@ -14,6 +15,10 @@ import { CONTROL_TYPE_LABEL } from '@/design/canvas/controls'
 
 const store = useDesignerStore()
 const control = computed(() => store.selectedControl as LabelGridControl | null)
+
+/** 卡内绑定示例（写成常量引用，避免在模板 mustache 里嵌套 {{ }} 触发表达式解析错误） */
+const BIND_ROW_EXAMPLE = '{{row.字段}}'
+const BIND_ROW_INDEX_EXAMPLE = '{{rowIndex + 1}}'
 
 const geo = computed(() =>
   control.value
@@ -120,9 +125,21 @@ function clearChildren(): void {
         @update:value="patch({ lineStyle: $event })"
       />
     </div>
+    <div class="props-row" style="margin-top: 4px">
+      <span class="props-label">数据源</span>
+      <NInput
+        size="small"
+        :value="control.dataSource ?? ''"
+        placeholder="数组路径，如 items"
+        style="width: 148px"
+        @update:value="patch({ dataSource: ($event ?? '').trim() || undefined })"
+      />
+    </div>
     <div class="props-row">
       <NText depth="3" style="font-size: 12px; line-height: 1.5">
-        标签网格是纯布局组件，本身不带数据源；每张卡印什么由放进首卡里的其他数据组件决定。
+        留空：纯布局平铺（每卡相同）。填数组路径（如 <code>items</code>）：卡片数跟随数据条数，
+        每卡注入 <code>row</code> / <code>rowIndex</code>，卡内控件绑定
+        <code>{{ BIND_ROW_EXAMPLE }}</code> 逐卡不同（流水号 / 条码 / 二维码）。
       </NText>
     </div>
 

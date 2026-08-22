@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { resolveTextValue, resolveControlContent } from './data-binder'
-import type { MathControl, SignatureControl, TextControl } from '@/types/control'
+import { resolveTextValue, resolveControlContent, resolveCodeText } from './data-binder'
+import type { BarcodeControl, MathControl, SignatureControl, TextControl } from '@/types/control'
 import type { EvalContext } from './types'
 
 function text(partial: Partial<TextControl>): TextControl {
@@ -152,5 +152,64 @@ describe('resolveControlContent —— 手写签名', () => {
     const { content, warnings } = await resolveControlContent(signature({ src: '' }), ctx)
     expect(content.kind).toBe('placeholder')
     expect(warnings.map((w) => w.code)).toContain('SIGNATURE_EMPTY')
+  })
+})
+
+describe('resolveControlContent —— 条码宽高独立', () => {
+  const ctx: EvalContext = { data: {} }
+
+  function barcode(partial: Partial<BarcodeControl>): BarcodeControl {
+    return { id: 'b1', type: 'barcode', left: 0, top: 0, width: 60, height: 40, value: 'SN-001', ...partial }
+  }
+
+  it('SVG 携带 width 参数（72dpi→96dpi 补偿）+ preserveAspectRatio="none" 拉伸填满', async () => {
+    const { content, warnings } = await resolveControlContent(barcode({ width: 30, height: 20 }), ctx)
+    expect(content.kind).toBe('svg')
+    expect(warnings).toEqual([])
+    if (content.kind === 'svg') {
+      // bwip-js 输出的 SVG 内部含 viewBox（宽度按 width 参数换算），且 class 注入
+      expect(content.svg).toContain('op-barcode-svg')
+      // makeSvgResponsive 去固定尺寸 + 条码分支改为 none（宽高独立填满，非 contain 居中）
+      expect(content.svg).toContain('preserveAspectRatio="none"')
+      expect(content.svg).not.toContain('xMidYMid meet')
+    }
+  })
+
+  it('showText=false 时 SVG 不含文字（includetext 关闭）', async () => {
+    const { content } = await resolveControlContent(barcode({ showText: false }), ctx)
+    expect(content.kind).toBe('svg')
+    if (content.kind === 'svg') expect(content.svg).not.toContain('text')
+  })
+})
+
+describe('resolveCodeText —— 条码内容三态（固定值/变量/表达式）', () => {
+  const ctx: EvalContext = { data: { order: { orderNo: 'SN-2026-001' } } }
+
+  function barcode(partial: Partial<BarcodeControl>): BarcodeControl {
+    return { id: 'b1', type: 'barcode', left: 0, top: 0, width: 60, height: 40, ...partial }
+  }
+
+  it('fixed：静态内容直接编码', () => {
+    expect(resolveCodeText(barcode({ contentType: 'fixed', value: 'SN-001' }), ctx)).toBe('SN-001')
+  })
+
+  it('variable：绑定字段路径取值', () => {
+    expect(resolveCodeText(barcode({ contentType: 'variable', binding: 'order.orderNo' }), ctx)).toBe('SN-2026-001')
+  })
+
+  it('expression：表达式求值（可叠加过滤器）', () => {
+    expect(resolveCodeText(barcode({ contentType: 'expression', expression: '{{order.orderNo | upper}}' }), ctx)).toBe('SN-2026-001')
+  })
+
+  it('显式模式内容为空时回落示例码（条码永不空白）', () => {
+    expect(resolveCodeText(barcode({ contentType: 'fixed' }), ctx)).toBe('0123456789')
+  })
+
+  it('老模板（无 contentType）：binding 优先于 value', () => {
+    expect(resolveCodeText(barcode({ binding: 'order.orderNo', value: 'OLD' }), ctx)).toBe('SN-2026-001')
+  })
+
+  it('fixed 模式仍走插值（value 里的 {{}} 生效）', () => {
+    expect(resolveCodeText(barcode({ contentType: 'fixed', value: '{{order.orderNo}}' }), ctx)).toBe('SN-2026-001')
   })
 })

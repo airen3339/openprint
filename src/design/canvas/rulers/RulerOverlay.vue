@@ -29,7 +29,7 @@ const store = useDesignerStore()
 const uiStore = useUiStore()
 
 const palette = computed(() =>
-  uiStore.effectiveTheme === 'dark' ? RULER_PALETTE_DARK : RULER_PALETTE_LIGHT,
+  uiStore.effectiveTheme !== 'light' ? RULER_PALETTE_DARK : RULER_PALETTE_LIGHT,
 )
 
 /* ---------- 刻度密度选择 ---------- */

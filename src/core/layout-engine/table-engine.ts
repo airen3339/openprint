@@ -207,6 +207,15 @@ function interp(src: string, ctx: EvalContext, errors: string[]): string {
 }
 
 /**
+ * 单元格内容模式（显式 contentType；老模板按 expression > field > text 启发式回退，
+ * 与文本控件 resolveTextValue 的回退语义一致）。
+ */
+function cellTextMode(cell: TableCell): 'fixed' | 'variable' | 'expression' {
+  if (cell.contentType) return cell.contentType
+  return cell.expression ? 'expression' : cell.field ? 'variable' : 'fixed'
+}
+
+/**
  * 数据行单元格取值。优先级：单元格 expression > 单元格 field > 单元格固定文字 > 列 expression > 列 field。
  * （单元格未设置任何内容时回落到列配置，既兼容老模板，也让"新增列"立刻可用。）
  */
@@ -216,6 +225,14 @@ function dataCellText(
   ctx: EvalContext,
   errors: string[],
 ): string {
+  const mode = cellTextMode(cell)
+  // 显式模式且字段非空：按模式取值；字段为空则回落老链路（列配置兜底，保证显式 variable 空路径不打断整列）
+  if (mode === 'expression' && cell.expression) return interp(cell.expression, ctx, errors)
+  if (mode === 'variable' && cell.field) {
+    return formatCellValue(resolveBinding(cell.field, ctx), cell.format ?? col?.format)
+  }
+  if (mode === 'fixed' && cell.text !== undefined) return interp(cell.text, ctx, errors)
+  // 老模板 / 显式模式字段为空：expression > field > text > 列 expression > 列 field
   if (cell.expression) return interp(cell.expression, ctx, errors)
   if (cell.field) return formatCellValue(resolveBinding(cell.field, ctx), cell.format ?? col?.format)
   if (cell.text !== undefined) return interp(cell.text, ctx, errors)
@@ -237,6 +254,14 @@ function staticCellText(
   ctx: EvalContext,
   errors: string[],
 ): string {
+  const mode = cellTextMode(cell)
+  // 显式模式且字段非空：按模式取值；字段为空则回落老链路
+  if (mode === 'expression' && cell.expression) return interp(cell.expression, ctx, errors)
+  if (mode === 'variable' && cell.field) {
+    return formatCellValue(resolveBinding(cell.field, ctx), cell.format ?? col?.format)
+  }
+  if (mode === 'fixed' && cell.text !== undefined) return interp(cell.text, ctx, errors)
+  // 老模板 / 显式模式字段为空：expression > field > text > 列 field > fallback
   if (cell.expression) return interp(cell.expression, ctx, errors)
   if (cell.field) return formatCellValue(resolveBinding(cell.field, ctx), cell.format ?? col?.format)
   if (cell.text !== undefined) return interp(cell.text, ctx, errors)
@@ -715,13 +740,17 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
   const repeatFooter = opts.repeatFooter ?? true
 
   const headerRows = isFirst || repeatHeader ? model.headerRows : []
-  const headerH = sumRowHeights(headerRows)
+  // td 0.2mm 边框（b-all / b-horizontal 的 border-top）未计入测量行高，渲染时逐行累积，
+  // 会让切片实际底部超过预算、压到页脚/页面边缘。按行预留边框：宁少排一行，不压页脚。
+  const borders = opts.borders ?? 'all'
+  const rowBorder = borders === 'all' || borders === 'horizontal' ? 0.2 : 0
+  const headerH = sumRowHeights(headerRows) + headerRows.length * rowBorder
   // 尾行按"是否每页都出现"拆分预算，避免非末页为总计/大写行预留留白：
   // - 每页固定：本页合计 + 静态尾行（repeatFooter 时）
   // - 仅末页：总计 + 大写金额 + 静态尾行（repeatFooter 关时）
   const pageFooterH = model.footerRows
     .filter((f) => f.footerKind === 'pageSubtotal' || (f.footerKind === 'static' && repeatFooter))
-    .reduce((s, r) => s + r.height, 0)
+    .reduce((s, r) => s + r.height + rowBorder, 0)
   const lastFooterH = model.footerRows
     .filter(
       (f) =>
@@ -729,7 +758,7 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
         f.footerKind === 'capital' ||
         (f.footerKind === 'static' && !repeatFooter),
     )
-    .reduce((s, r) => s + r.height, 0)
+    .reduce((s, r) => s + r.height + rowBorder, 0)
 
   // 固定每页行数（pageRows 为数字时强制分页）
   const forcedRows =
@@ -774,9 +803,10 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
 
   while (i < model.rows.length) {
     const row = model.rows[i]!
+    const rowH = row.height + rowBorder
     if (forcedRows !== null && picked.length >= forcedRows) break
 
-    if (used + row.height > budget) {
+    if (used + rowH > budget) {
       // 一行都放不下：强制放一行，避免无限循环（并告警）
       if (picked.length === 0) {
         if (row.height > req.avail) {
@@ -787,14 +817,14 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
           })
         }
         picked.push(row)
-        used += row.height
+        used += rowH
         i++
       }
       break
     }
 
     picked.push(row)
-    used += row.height
+    used += rowH
     i++
   }
 
@@ -844,7 +874,7 @@ export function sliceTable(model: TableModel, req: SliceRequest): SliceResult {
     rows: picked,
     footerRows,
     nextStart: i,
-    height: headerH + used + sumRowHeights(footerRows),
+    height: headerH + used + sumRowHeights(footerRows) + footerRows.length * rowBorder,
     isLast,
     warnings,
   }

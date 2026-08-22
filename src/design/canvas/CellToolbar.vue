@@ -38,6 +38,8 @@ import {
 import { FONT_CATALOG } from '@/core/fonts/catalog'
 import { useSystemFonts } from '@/core/fonts/system'
 import { useDataSourceStore } from '@/design/stores/dataSource'
+import ContentValueEditor from '@/design/panels/props/ContentValueEditor.vue'
+import type { ContentMode } from '@/design/panels/props/ContentValueEditor.vue'
 import {
   formatKindOptions,
   datePatternOptions,
@@ -88,41 +90,85 @@ const fontOptions = computed<(SelectOption | SelectGroupOption)[]>(() => {
 })
 
 /**
- * 可绑定字段：
+ * 可绑定字段（用于变量模式默认值）：
  * - 数据样例行 → 明细表（数组）字段，运行期按行迭代
  * - 表头 / 静态行 → 主表标量字段
  */
-const fieldOptions = computed(() => {
+const detailFields = computed(() => {
   const isDetail = props.rowKind === 'data'
   const tables = ds.activeSource?.tables ?? []
   const arrayTableIds = new Set(tables.filter((t) => t.isArray).map((t) => t.id))
-  const list = ds.flatFields.filter((f) => {
+  return ds.flatFields.filter((f) => {
     const inArray = f.tableId ? arrayTableIds.has(f.tableId) : f.path.includes('[]')
     return isDetail ? inArray : !inArray
   })
-  return [
-    { label: '（不绑定）', value: '' },
-    ...list.map((f) => ({ label: `${f.label}  ·  ${f.path}`, value: f.path })),
-  ]
 })
 
-/** 从单元格 expression（形如 {{order.no}}）反解出字段路径，用于下拉回显 */
-function fieldFromExpression(expr: string | undefined): string | undefined {
-  if (!expr) return undefined
-  const m = /^\{\{\s*([A-Za-z0-9_$.[\]]+)\s*\}\}$/.exec(expr.trim())
-  return m ? m[1] : undefined
-}
-
-const currentField = computed(
-  () =>
-    cell.value.field ??
-    fieldFromExpression(cell.value.expression) ??
-    (props.rowKind === 'data' ? (column.value?.field ?? '') : ''),
+/** 变量模式默认路径：取该行语义下的第一个字段（数据行=明细字段，其余=标量字段） */
+const bindingDefault = computed(
+  () => detailFields.value[0]?.path ?? (props.rowKind === 'data' ? 'items[].name' : 'order.orderNo'),
 )
 
-/** 仅绑定了字段/表达式的单元格才需要格式（纯静态文字格式无意义） */
+/** 表达式模式默认值（数据行按行迭代，其余按主表上下文） */
+const expressionDefault = computed(() =>
+  props.rowKind === 'data' ? '{{rowIndex + 1}}' : '{{order.total}}',
+)
+
+/** 单元格内容三态：固定值 / 变量（字段绑定） / 表达式（显式 contentType，老模板启发式回退） */
+const cellMode = computed<ContentMode>(() => {
+  const c = cell.value
+  if (c?.contentType) return c.contentType
+  return c?.expression ? 'expression' : c?.field ? 'variable' : 'fixed'
+})
+
+/** 模式切换：写 contentType + 清空其它两个字段（默认值由编辑器按 bindingDefault 注入） */
+function onCellMode(m: ContentMode): void {
+  const p: Partial<TableCell> = { contentType: m }
+  if (m === 'fixed') {
+    p.field = undefined
+    p.expression = undefined
+  } else if (m === 'variable') {
+    p.expression = undefined
+  } else {
+    p.field = undefined
+  }
+  emit('apply', patchCell(props.control, props.row, props.col, p))
+}
+
+function onCellValue(v: string): void {
+  emit('apply', patchCell(props.control, props.row, props.col, { text: v }))
+}
+
+/** 变量模式：写 contentType + field 并清空 text/expression，保证 field 为唯一取值源 */
+function onCellBinding(path: string): void {
+  emit(
+    'apply',
+    patchCell(props.control, props.row, props.col, {
+      contentType: 'variable',
+      field: path || undefined,
+      text: undefined,
+      expression: undefined,
+    }),
+  )
+}
+
+function onCellExpression(v: string): void {
+  emit(
+    'apply',
+    patchCell(props.control, props.row, props.col, {
+      contentType: 'expression',
+      expression: v || undefined,
+      text: undefined,
+      field: undefined,
+    }),
+  )
+}
+
+/** 仅绑定了字段/表达式（或显式 variable/expression 模式）的单元格才需要格式（纯静态文字格式无意义） */
 const canFormat = computed(
   () =>
+    cell.value.contentType === 'variable' ||
+    cell.value.contentType === 'expression' ||
     Boolean(cell.value.field || cell.value.expression) ||
     (props.rowKind === 'data' && Boolean(column.value?.field || column.value?.expression)),
 )
@@ -138,46 +184,6 @@ function applyStyle(patch: TableCellStyle): void {
 
 function toggle(key: 'bold' | 'italic' | 'underline'): void {
   applyStyle({ [key]: !style.value[key] } as TableCellStyle)
-}
-
-/**
- * 绑定字段。
- * - 数据样例行：写 `field`（保留字段树给的 items[]. 前缀，运行期由 resolveBinding 去前缀逐行迭代）。
- * - 表头 / 静态行：写 `{{path}}` 表达式 —— 与"动态数据用 {{path}}、否则纯文本"约定一致，渲染走插值。
- * 字段绑定与自由表达式互斥，避免运行期语义打架。
- */
-function bindField(path: string | null): void {
-  if (!path) {
-    // 解绑：清除字段与表达式，回落到原文字
-    emit(
-      'apply',
-      patchCell(props.control, props.row, props.col, {
-        field: undefined,
-        expression: undefined,
-        text: cell.value.text,
-      }),
-    )
-    return
-  }
-  if (props.rowKind === 'data') {
-    emit(
-      'apply',
-      patchCell(props.control, props.row, props.col, {
-        field: path,
-        expression: undefined,
-        text: undefined,
-      }),
-    )
-  } else {
-    emit(
-      'apply',
-      patchCell(props.control, props.row, props.col, {
-        expression: `{{${path}}}`,
-        field: undefined,
-        text: undefined,
-      }),
-    )
-  }
 }
 
 const spanMax = computed(() => grid.value.colCount - props.col)
@@ -272,19 +278,29 @@ function deleteCol(): void {
     @dblclick.stop
   >
     <div class="op-cell-toolbar__inner">
-      <!-- 第一行：字段绑定 / 字体 / 字形 / 对齐 -->
+      <!-- 第 0 行：内容三态（固定值 / 变量 / 表达式），与文本组件完全一致 -->
+      <div class="op-cell-toolbar__row">
+        <span class="op-cell-toolbar__tag">内容</span>
+        <ContentValueEditor
+          class="op-cell-content"
+          compact
+          :mode="cellMode"
+          :value="cell.text ?? ''"
+          :binding="cell.field ?? ''"
+          :expression="cell.expression ?? ''"
+          placeholder="单元格内容"
+          :binding-default="bindingDefault"
+          :expression-default="expressionDefault"
+          @update:mode="onCellMode"
+          @update:value="onCellValue"
+          @update:binding="onCellBinding"
+          @update:expression="onCellExpression"
+        />
+      </div>
+
+      <!-- 第一行：行角色 / 字体 / 字形 / 对齐 -->
       <div class="op-cell-toolbar__row">
         <span class="op-cell-toolbar__tag">{{ roleLabel }}</span>
-
-        <NSelect
-          size="tiny"
-          class="w-24"
-          :value="currentField"
-          :options="fieldOptions"
-          filterable
-          placeholder="绑定字段"
-          @update:value="bindField"
-        />
 
         <NDivider vertical />
 

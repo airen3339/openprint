@@ -24,7 +24,7 @@ const store = useDesignerStore()
 const uiStore = useUiStore()
 const message = useMessage()
 
-const isDark = computed(() => uiStore.effectiveTheme === 'dark')
+const isDark = computed(() => uiStore.effectiveTheme !== 'light')
 
 /** CodeMirror 容器 DOM ref */
 const editorContainerRef = ref<HTMLElement | null>(null)

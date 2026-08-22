@@ -1,11 +1,12 @@
 /**
  * PrintZone —— 页眉/页脚区域控件（《设计方案》§5.14）
  *
- * Word 式布局：页眉/页脚位于**上下边距内**（贴页顶/页底边缘），正文独占内容区。
- * 与渲染端一致：页眉/页脚 section 是内容宽（左右边距内），Y 方向贴页顶/页底。
+ * Word 式布局：页眉/页脚位于**页顶/页底边缘**（Y 贴边），正文独占内容区。
+ * 与渲染端一致：页眉/页脚 section 是**整页全宽**（left:0, width=页宽，不受左右边距影响），
+ * 高度方向贴页顶/页底 —— 所见即所得（拖到色带左边缘 = 纸张左边缘）。
  * 画布表现：一条横向锁定色带：
- * - header 色带：top=0（页顶边距内），高度可改（仅底部中点手柄）
- * - footer 色带：top=页高-高（页底边距内），高度可改（仅顶部中点手柄）
+ * - header 色带：top=0（页顶），高度可改（仅底部中点手柄）
+ * - footer 色带：top=页高-高（页底），高度可改（仅顶部中点手柄）
  * - 自身不可移动/旋转（位置由页顶/页底固定）
  * - 单例：每页最多一个 header + 一个 footer（由 CanvasDesigner.addZone 保证）
  * - 序列化目标是 sections[header/footer]，不进 body.components
@@ -34,9 +35,9 @@ export class PrintZone extends Rect implements IPrintObject {
   ) {
     const h = mm(control.zoneHeight)
     super({
-      left: mm(marginLeftMm),
+      left: 0, // 整页全宽贴纸边（与渲染端 .op-header/.op-footer 一致，不受左右边距影响）
       top: control.zone === 'header' ? 0 : mm(pageHeightMm) - h,
-      width: mm(pageWidthMm) - mm(marginLeftMm) - mm(marginRightMm),
+      width: mm(pageWidthMm),
       height: h,
       fill: control.zone === 'header' ? 'rgba(22,119,255,0.05)' : 'rgba(22,119,255,0.04)',
       stroke: 'rgba(22,119,255,0.45)',
@@ -73,12 +74,12 @@ export class PrintZone extends Rect implements IPrintObject {
     this.controls = controls
   }
 
-  /** 页面尺寸变化时由 CanvasDesigner 调用，重贴页顶/页底（保持左右边距） */
+  /** 页面尺寸变化时由 CanvasDesigner 调用，重贴页顶/页底（保持整页全宽） */
   relayout(pageWidthMm: number, pageHeightMm: number): void {
     const h = this.height * this.scaleY
     this.set({
-      left: mm(this.marginLeftMm),
-      width: mm(pageWidthMm) - mm(this.marginLeftMm) - mm(this.marginRightMm),
+      left: 0, // 整页全宽贴纸边（与渲染端一致，不受左右边距影响）
+      width: mm(pageWidthMm),
       scaleX: 1,
       scaleY: 1,
       height: h,

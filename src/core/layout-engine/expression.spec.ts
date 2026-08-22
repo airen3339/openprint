@@ -75,3 +75,108 @@ describe('expression 安全表达式引擎', () => {
     expect(() => evaluate('@#$', { data: {} })).toThrow()
   })
 })
+
+describe('expression 内置函数（函数调用语法）', () => {
+  const ctx = {
+    data: {
+      items: [
+        { qty: 2, price: 10, amount: 20 },
+        { qty: 3, price: 10, amount: 30 },
+        { qty: 5, price: 10, amount: 50 },
+      ],
+      total: 100,
+    },
+  }
+
+  it('now() 返回 Date 且可经 | date 过滤器', () => {
+    const r = interpolate('{{now() | date:"YYYY-MM-DD"}}', { data: {} })
+    expect(r.errors).toHaveLength(0)
+    expect(r.text).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('sum 对带 [] 的路径聚合数据数组', () => {
+    expect(evaluate("sum('items[].amount')", ctx)).toBe(100)
+    expect(evaluate("sum('items[].qty')", ctx)).toBe(10)
+  })
+
+  it('avg / count / min / max', () => {
+    expect(evaluate("avg('items[].amount')", ctx)).toBeCloseTo(100 / 3)
+    expect(evaluate("count('items[].qty')", ctx)).toBe(3)
+    expect(evaluate("min('items[].amount')", ctx)).toBe(20)
+    expect(evaluate("max('items[].amount')", ctx)).toBe(50)
+  })
+
+  it('len 取数组 / 字符串长度', () => {
+    expect(evaluate('len(items)', ctx)).toBe(3)
+    expect(evaluate('len("abc")', { data: {} })).toBe(3)
+  })
+
+  it('函数可嵌入 {{}} 与普通文本混排', () => {
+    const r = interpolate('合计 ¥{{ sum(\'items[].amount\') | currency:"CNY" }}', ctx)
+    expect(r.errors).toHaveLength(0)
+    expect(r.text).toContain('¥')
+    expect(r.text).toContain('100.00')
+  })
+
+  it('未知函数抛错（转 warning，不打断渲染）', () => {
+    expect(() => evaluate('foo()', ctx)).toThrow(/未知函数/)
+  })
+})
+
+describe('expression 逻辑函数（if / 非空 / 布尔）', () => {
+  const ctx = {
+    data: {
+      amount: 200,
+      status: 'paid',
+      vip: true,
+      order: { no: 'A1001', remark: '' },
+      items: [{ name: '特价苹果' }, { name: '香蕉' }],
+      productName: '特价礼盒',
+      codes: ['promo', 'new'],
+      emptyList: [] as unknown[],
+    },
+  }
+
+  it('if 按条件二选一', () => {
+    expect(evaluate("if(amount > 100, '大单', '小单')", ctx)).toBe('大单')
+    expect(evaluate("if(amount > 999, '大单', '小单')", ctx)).toBe('小单')
+  })
+
+  it('notEmpty / isEmpty 空值判定', () => {
+    expect(evaluate('notEmpty(order.no)', ctx)).toBe(true)
+    expect(evaluate('notEmpty(order.remark)', ctx)).toBe(false)
+    expect(evaluate('isEmpty(order.remark)', ctx)).toBe(true)
+    expect(evaluate('isEmpty(order.no)', ctx)).toBe(false)
+    expect(evaluate('isEmpty(emptyList)', ctx)).toBe(true)
+    expect(evaluate('notEmpty(undefinedField)', ctx)).toBe(false)
+  })
+
+  it('eq 宽松相等', () => {
+    expect(evaluate("eq(status, 'paid')", ctx)).toBe(true)
+    expect(evaluate("eq(status, 'unpaid')", ctx)).toBe(false)
+    expect(evaluate('eq(1, "1")', { data: {} })).toBe(true)
+  })
+
+  it('and / or / not 布尔组合', () => {
+    expect(evaluate('and(amount > 0, notEmpty(order.no))', ctx)).toBe(true)
+    expect(evaluate('and(amount > 999, notEmpty(order.no))', ctx)).toBe(false)
+    expect(evaluate('or(vip === true, amount > 1000)', ctx)).toBe(true)
+    expect(evaluate('or(vip === false, amount > 1000)', ctx)).toBe(false)
+    expect(evaluate('not(isEmpty(order.no))', ctx)).toBe(true)
+  })
+
+  it('contains 文本子串 / 数组元素', () => {
+    expect(evaluate("contains(productName, '特价')", ctx)).toBe(true)
+    expect(evaluate("contains(productName, '缺货')", ctx)).toBe(false)
+    expect(evaluate("contains(codes, 'promo')", ctx)).toBe(true)
+    expect(evaluate("contains(codes, 'sold')", ctx)).toBe(false)
+  })
+
+  it('逻辑函数可嵌入 {{}} 并接过滤器', () => {
+    const r = interpolate("{{if(notEmpty(order.no), order.no, '—')}}", ctx)
+    expect(r.errors).toHaveLength(0)
+    expect(r.text).toBe('A1001')
+    const r2 = interpolate("{{if(notEmpty(order.remark), order.remark, '—')}}", ctx)
+    expect(r2.text).toBe('—')
+  })
+})

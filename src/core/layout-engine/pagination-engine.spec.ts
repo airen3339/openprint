@@ -61,6 +61,107 @@ describe('layout 分页引擎（集成 demo 模板）', () => {
   }
 })
 
+describe('layout —— 页眉每页重复 + 流式表格分页（表格不得覆盖页眉/页脚）', () => {
+  const measurer = createCjkMeasurer()
+
+  /** A4、无上下边距；页眉 30mm（明显占据页顶）、页脚 10mm；表格从 35mm 起 → 跨页 */
+  function headerTableTemplate(): TemplateData<AnyControl> {
+    const table = seedSummaryTail(
+      {
+        id: 'ft',
+        type: 'table',
+        left: 10,
+        top: 35,
+        width: 190,
+        height: 40,
+        dataSource: 'items',
+        columns: [
+          { title: '名称', field: 'items[].name', width: 140, align: 'left', headerAlign: 'center' },
+          { title: '金额', field: 'items[].amount', width: 50, headerAlign: 'center' },
+        ],
+        data: [{ name: 'A', amount: 20 }],
+        options: { repeatHeader: true, repeatFooter: false },
+      } as unknown as TableControl,
+      { numericColumns: [1], moneyColumn: 1, capital: true },
+    )
+    return {
+      version: '1',
+      document: {
+        type: 'report',
+        page: {
+          width: 210,
+          height: 297,
+          unit: 'mm',
+          orientation: 'portrait',
+          margin: { top: 0, right: 10, bottom: 0, left: 10 },
+        },
+        sections: [
+          {
+            type: 'header',
+            height: 30,
+            repeat: true,
+            components: [
+              { id: 'hd-t', type: 'text', left: 0, top: 0, width: 200, height: 10, value: '公司抬头' } as AnyControl,
+            ],
+          },
+          { type: 'body', components: [table] },
+          {
+            type: 'footer',
+            height: 10,
+            repeat: true,
+            components: [
+              { id: 'ft-p', type: 'text', left: 0, top: 2, width: 100, height: 6, value: '第 {{page}} 页' } as AnyControl,
+            ],
+          },
+        ],
+      },
+    }
+  }
+
+  function tablesOf(pageNo: number, result: LayoutResult): PlacedTable[] {
+    return result.pages[pageNo]!.body.filter((n): n is PlacedTable => n.kind === 'table')
+  }
+
+  it('非首页表格切片从页眉下方开始（top = headerHeight），不覆盖每页重复的页眉/页脚', async () => {
+    const result = await layout(headerTableTemplate(), makeData(60), { measurer })
+    expect(
+      result.pages.length,
+      'pages=' + result.pages.length + ' warns=' + JSON.stringify(result.warnings.map((w) => w.code)),
+    ).toBeGreaterThanOrEqual(2)
+
+    // 每页表格切片都不进入页眉区（top >= 30mm）
+    for (let i = 0; i < result.pages.length; i++) {
+      for (const t of tablesOf(i, result)) {
+        expect(t.top, `page ${i + 1} table.top`).toBeGreaterThanOrEqual(30 - 0.5)
+        // 表格底部不超过页脚上沿（297 - 10 = 287mm）
+        expect(t.top + t.height, `page ${i + 1} table.bottom`).toBeLessThanOrEqual(287 + 0.5)
+      }
+    }
+
+    // 首页表格从用户放置位置 35mm 起（尊重设计位置）
+    expect(tablesOf(0, result)[0]!.top).toBe(35)
+    // 非首页（若有多页）从页眉下方 30mm 起
+    for (let i = 1; i < result.pages.length; i++) {
+      expect(tablesOf(i, result)[0]!.top, `page ${i + 1} table.top`).toBe(30)
+    }
+
+    // 表格确实跨页（60 行不止一页）
+    const html = renderHtml(result, { screen: false })
+    const body = html.replace(/<style[\s\S]*?<\/style>/g, '')
+    expect((body.match(/op-node op-table/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('无色带模板行为不变（零回归）：非首页切片从页顶 0 起', async () => {
+    const tpl: TemplateData<AnyControl> = headerTableTemplate()
+    tpl.document.sections = [{ type: 'body', components: (tpl.document.sections![1] as { components: AnyControl[] }).components }]
+    const result = await layout(tpl, makeData(60), { measurer })
+    expect(result.pages.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < result.pages.length; i++) {
+      expect(tablesOf(i, result)[0]!.top, `page ${i + 1} table.top`).toBe(0)
+    }
+  })
+})
+
 describe('layout —— 表格拖到底部 + 下方控件（强转非末页回归）', () => {
   const measurer = createCjkMeasurer()
 

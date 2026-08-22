@@ -125,6 +125,7 @@ function tokenize(src: string): Token[] {
 type Node =
   | { t: 'lit'; v: unknown }
   | { t: 'path'; segs: Array<string | Node> }
+  | { t: 'call'; name: string; args: Node[] }
   | { t: 'un'; op: string; a: Node }
   | { t: 'bin'; op: string; a: Node; b: Node }
   | { t: 'cond'; c: Node; a: Node; b: Node }
@@ -239,6 +240,10 @@ class Parser {
       if (tok.value === 'false') return { t: 'lit', v: false }
       if (tok.value === 'null') return { t: 'lit', v: null }
       if (tok.value === 'undefined') return { t: 'lit', v: undefined }
+      // 标识符后紧跟 ( → 函数调用：now() / sum('items[].amount')
+      if (this.peek().type === 'op' && this.peek().value === '(') {
+        return this.parseCall(tok.value)
+      }
       return this.parsePath(tok.value)
     }
 
@@ -269,6 +274,20 @@ class Parser {
     }
     return { t: 'path', segs }
   }
+
+  /** 函数调用：name(args)。参数用逗号分隔，每个参数是一个完整表达式。 */
+  private parseCall(name: string): Node {
+    this.next() // 消费 '('
+    const args: Node[] = []
+    if (this.peek().type === 'op' && this.peek().value === ')') {
+      this.next()
+      return { t: 'call', name, args }
+    }
+    args.push(this.parseTernary())
+    while (this.eat(',')) args.push(this.parseTernary())
+    this.expect(')')
+    return { t: 'call', name, args }
+  }
 }
 
 /* ================================= 求值 ================================= */
@@ -295,6 +314,11 @@ function isTruthy(v: unknown): boolean {
   return Boolean(v)
 }
 
+/** 空值判定：null / undefined / 空串 / 空数组 视为空 */
+function isEmptyValue(v: unknown): boolean {
+  return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
+}
+
 function readProp(obj: unknown, key: string): unknown {
   if (obj === null || obj === undefined) return undefined
   if (FORBIDDEN_KEYS.has(key)) return undefined
@@ -317,6 +341,13 @@ function evalNode(node: Node, ctx: EvalContext, scope?: Record<string, unknown>)
         cur = readProp(cur, key)
       }
       return cur
+    }
+
+    case 'call': {
+      const fn = FUNCTIONS[node.name]
+      if (!fn) throw new Error(`未知函数 "${node.name}()"`)
+      const args = node.args.map((a) => evalNode(a, ctx, scope))
+      return fn(args, ctx)
     }
 
     case 'un': {
@@ -537,6 +568,118 @@ export const FILTERS: Record<string, Filter> = {
   /** 补零：{{ seq | padStart:3 }} → 007 */
   padStart(value, len = 2, fill = '0') {
     return String(value ?? '').padStart(toNum(len), String(fill))
+  },
+}
+
+/* ============================== 内置函数 ============================== */
+
+/** 表达式内置函数签名：参数已逐个求值后传入，ctx 用于解析路径字符串。 */
+export type ExprFunction = (args: unknown[], ctx: EvalContext) => unknown
+
+function toArrayLike(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : []
+}
+
+/**
+ * 把聚合参数解析为数值数组：
+ * - 字符串路径 `'items[].amount'` → 取 data.items 每项的 amount 字段；
+ * - 字符串路径 `'items'` → 直接求值该路径得到数组；
+ * - 已求值的数组 → 原样转数值。
+ * 用户需写成带引号的路径字符串（裸 `items[].amount` 会被当作普通路径字段访问）。
+ */
+function resolveNumericArray(arg: unknown, ctx: EvalContext): number[] {
+  let arr: unknown[]
+  if (typeof arg === 'string') {
+    const marker = arg.indexOf('[]')
+    if (marker >= 0) {
+      const base = arg.slice(0, marker)
+      const field = arg.slice(marker + 2).replace(/^\./, '')
+      const baseVal = evaluate(base, ctx)
+      const list = toArrayLike(baseVal)
+      arr = field ? list.map((el) => readProp(el, field)) : list
+    } else {
+      arr = toArrayLike(evaluate(arg, ctx))
+    }
+  } else {
+    arr = toArrayLike(arg)
+  }
+  return arr.map((v) => toNum(v))
+}
+
+/**
+ * 内置函数表（表达式可调用，如 `now()` / `sum('items[].amount')`）。
+ * 与 `{{sum}}` 这类裸标识符（表格页脚经 scope 注入）互不冲突：
+ * 前者是 `函数调用` 语法，后者走 resolveRoot 的 scope 分支。
+ */
+export const FUNCTIONS: Record<string, ExprFunction> = {
+  /** 当前系统时间（可接 `| date` 过滤器）：{{ now() | date:'YYYY-MM-DD HH:mm' }} */
+  now() {
+    return new Date()
+  },
+  /** 数值数组求和：{{ sum('items[].amount') }} */
+  sum(args, ctx) {
+    return resolveNumericArray(args[0], ctx).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0)
+  },
+  /** 平均值：{{ avg('items[].qty') }} */
+  avg(args, ctx) {
+    const arr = resolveNumericArray(args[0], ctx)
+    return arr.length ? arr.reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0) / arr.length : 0
+  },
+  /** 计数（非空项数）：{{ count('items[].qty') }} */
+  count(args, ctx) {
+    return resolveNumericArray(args[0], ctx).length
+  },
+  /** 最小值：{{ min('items[].amount') }} */
+  min(args, ctx) {
+    const arr = resolveNumericArray(args[0], ctx).filter(Number.isFinite)
+    return arr.length ? Math.min(...arr) : 0
+  },
+  /** 最大值：{{ max('items[].amount') }} */
+  max(args, ctx) {
+    const arr = resolveNumericArray(args[0], ctx).filter(Number.isFinite)
+    return arr.length ? Math.max(...arr) : 0
+  },
+  /** 长度（数组或字符串）：{{ len(items) }} / {{ len("abc") }} */
+  len(args) {
+    const v = args[0]
+    if (Array.isArray(v)) return v.length
+    if (typeof v === 'string') return v.length
+    return 0
+  },
+  /** 条件判断：条件成立返回第二参数，否则第三参数（与 ?: 等价，函数写法更直观） */
+  if(args) {
+    return isTruthy(args[0]) ? args[1] : args[2]
+  },
+  /** 非空判断：非 null / 未定义 / 空串 / 空数组 视为非空 */
+  notEmpty(args) {
+    return !isEmptyValue(args[0])
+  },
+  /** 为空判断：null / 未定义 / 空串 / 空数组 视为空 */
+  isEmpty(args) {
+    return isEmptyValue(args[0])
+  },
+  /** 相等判断（宽松比较，数字与字符串可互通） */
+  eq(args) {
+    return looseEqual(args[0], args[1])
+  },
+  /** 多条件「同时成立」才返回 true */
+  and(args) {
+    return args.length > 0 && args.every((a) => isTruthy(a))
+  },
+  /** 多条件「任一成立」即返回 true */
+  or(args) {
+    return args.some((a) => isTruthy(a))
+  },
+  /** 布尔取反 */
+  not(args) {
+    return !isTruthy(args[0])
+  },
+  /** 包含：文本含子串，或数组含元素 */
+  contains(args) {
+    const hay = args[0]
+    const needle = args[1]
+    if (Array.isArray(hay)) return hay.includes(needle)
+    return String(hay ?? '').includes(String(needle ?? ''))
   },
 }
 

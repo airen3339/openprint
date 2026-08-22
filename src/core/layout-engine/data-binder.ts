@@ -78,14 +78,31 @@ function resolveImageSrc(control: ImageControl, ctx: EvalContext): string {
 
 /* ------------------------------ 条码 / 二维码 ----------------------------- */
 
-function resolveCodeText(control: BarcodeControl | QrcodeControl, ctx: EvalContext): string {
-  if (control.binding) {
-    const v = resolveBinding(control.binding, ctx)
-    if (v !== null && v !== undefined && v !== '') return String(v)
+/** 条码/二维码编码文本：按 contentType 三态取值（表达式/字段绑定/静态），空值回落示例码 */
+export function resolveCodeText(control: BarcodeControl | QrcodeControl, ctx: EvalContext): string {
+  const mode = control.contentType
+  let raw: string | undefined
+  // 显式三态：expression → 表达式求值；variable → 字段绑定；fixed → 静态内容（可含 {{}} 插值）
+  if (mode === 'expression') {
+    raw = control.expression ? interpolate(control.expression, ctx).text : undefined
+  } else if (mode === 'variable') {
+    if (control.binding) {
+      const v = resolveBinding(control.binding, ctx)
+      if (v !== null && v !== undefined && v !== '') return String(v)
+    }
+    raw = undefined
+  } else if (mode === 'fixed') {
+    raw = control.value ? interpolate(control.value, ctx).text : undefined
+  } else {
+    // 老模板（无 contentType）：binding > value 启发式
+    if (control.binding) {
+      const v = resolveBinding(control.binding, ctx)
+      if (v !== null && v !== undefined && v !== '') return String(v)
+    }
+    raw = control.value ? interpolate(control.value, ctx).text : undefined
   }
-  if (control.value) return interpolate(control.value, ctx).text
-  // 既没 binding 也没 value：设计画布兜底示例码，预览同样兜底，避免空白
-  return control.type === 'qrcode' ? 'https://openprint.dev' : '0123456789'
+  // 各模式内容为空：回落示例码（保持"条码永不空白"的设计期占位约束）
+  return raw || (control.type === 'qrcode' ? 'https://openprint.dev' : '0123456789')
 }
 
 /**
@@ -109,13 +126,20 @@ function renderBarcodeSvg(control: BarcodeControl, text: string): string {
     text,
     scale: 2,
     height: barHeightMM,
+    // 目标宽度（mm）：bwip-js 以 72dpi 换算像素，而渲染端是 96dpi；
+    // 传「控件宽mm × 96/72 ÷ scale」使输出自然宽 ≈ 控件宽，宽度独立可调且条码条不变形
+    width: Math.max(1, (control.width ?? 30) * (96 / 72) / 2),
     paddingtop: paddingMM,
     paddingbottom: paddingMM,
-    includetext: control.showText ?? false,
+    includetext: control.showText ?? true,
     textxalign: 'center',
     textsize: 12,
   })
+  // 条码与二维码统一 100%×100% 填满控件框（宽高独立，所见即所得）；
+  // preserveAspectRatio="none"：自然尺寸 ≈ 控件尺寸后拉伸量 ≈ 1，条与数字不变形。
   return makeSvgResponsive(svg)
+    .replace(/preserveAspectRatio="xMidYMid meet"/, 'preserveAspectRatio="none"')
+    .replace(/<svg\b/, '<svg class="op-barcode-svg"')
 }
 
 async function renderQrcodeSvg(control: QrcodeControl, text: string): Promise<string> {

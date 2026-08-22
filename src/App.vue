@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
  * App —— 顶层三栏布局壳（《实施指南》§5.5 + UI 参考图）
- * 深/亮双主题：
- *   - NConfigProvider.theme = light ? null : darkTheme
- *   - NConfigProvider.themeOverrides = lightThemeOverrides / darkThemeOverrides
+ * 亮 / 暗 / SVIP黑金 三主题：
+ *   - NConfigProvider.theme = light ? null : darkTheme（SVIP 属深色系，复用 darkTheme）
+ *   - NConfigProvider.themeOverrides = lightThemeOverrides / darkThemeOverrides / svipThemeOverrides
  *   - NGlobalStyle 同步 common.bodyColor / textColor 到 document.body
- *   - html.dark 类由 ui store 负责同步（主题闭环：ui store = 唯一真相源）
+ *   - html.dark / html.svip 类由 ui store 负责同步（主题闭环：ui store = 唯一真相源）
  */
 import { computed } from 'vue'
 import { NConfigProvider, NDialogProvider, NGlobalStyle, NMessageProvider, darkTheme, zhCN, dateZhCN } from 'naive-ui'
@@ -15,13 +15,23 @@ import RightPanel from '@/design/panels/RightPanel.vue'
 import CanvasStage from '@/design/canvas/CanvasStage.vue'
 import SignaturePadModal from '@/design/panels/SignaturePadModal.vue'
 import { useUiStore } from '@/design/stores/ui'
-import { darkThemeOverrides, lightThemeOverrides } from '@/theme/naive-theme'
+import { darkThemeOverrides, lightThemeOverrides, svipThemeOverrides } from '@/theme/naive-theme'
 
 const uiStore = useUiStore()
 
-const isDark = computed(() => uiStore.effectiveTheme === 'dark')
+/** SVIP 属深色系：非 light 一律用 darkTheme 基座 */
+const isDark = computed(() => uiStore.effectiveTheme !== 'light')
 const naiveTheme = computed(() => (isDark.value ? darkTheme : null))
-const themeOverrides = computed(() => (isDark.value ? darkThemeOverrides : lightThemeOverrides))
+const themeOverrides = computed(() => {
+  switch (uiStore.effectiveTheme) {
+    case 'svip':
+      return svipThemeOverrides
+    case 'dark':
+      return darkThemeOverrides
+    default:
+      return lightThemeOverrides
+  }
+})
 </script>
 
 <template>

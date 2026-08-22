@@ -24,6 +24,7 @@ import TemplateMarket from '@/design/modals/TemplateMarket.vue'
 import DataImportModal from '@/design/modals/DataImportModal.vue'
 import JsonViewerModal from '@/design/modals/JsonViewerModal.vue'
 import PrintDialog from '@/design/modals/PrintDialog.vue'
+import FlowLabelModal from '@/design/modals/FlowLabelModal.vue'
 import PreviewPanel from '@/design/preview/PreviewPanel.vue'
 import ExportDialog from '@/design/toolbar/ExportDialog.vue'
 import AiAssistantPanel from '@/design/ai/AiAssistantPanel.vue'
@@ -45,6 +46,7 @@ const showMarket = ref(false)
 const showDataImport = ref(false)
 const showJson = ref(false)
 const showPrint = ref(false)
+const showFlowLabel = ref(false)
 const showAi = ref(false)
 const showNewTemplate = ref(false)
 const newTemplateName = ref('')
@@ -162,7 +164,9 @@ function onTemplateName(v: string): void {
   store.dirty = true
 }
 
-const isDark = computed(() => uiStore.effectiveTheme === 'dark')
+const isDark = computed(() => uiStore.effectiveTheme !== 'light')
+/** SVIP 黑金主题激活态（版本号点击切换） */
+const isSvip = computed(() => uiStore.effectiveTheme === 'svip')
 
 const fileMenuOptions: DropdownOption[] = [
   { label: '新建空白模板', key: 'new' },
@@ -173,26 +177,10 @@ const fileMenuOptions: DropdownOption[] = [
   { label: '导入模板...', key: 'importTpl' },
   { label: '导出模板...', key: 'exportTpl' },
   { type: 'divider', key: 'd3' },
+  { label: '导入数据...', key: 'importData' },
+  { type: 'divider', key: 'd4' },
   { label: '保存', key: 'save' },
   { label: '另存为...', key: 'saveAs' },
-]
-
-const themeOptions: DropdownOption[] = [
-  {
-    label: '浅色',
-    key: 'light',
-    icon: () => h(NIcon, null, { default: () => h(IconSun) }),
-  },
-  {
-    label: '深色',
-    key: 'dark',
-    icon: () => h(NIcon, null, { default: () => h(IconMoon) }),
-  },
-  {
-    label: '跟随系统',
-    key: 'system',
-    icon: () => h(NIcon, null, { default: () => h(IconAuto) }),
-  },
 ]
 
 async function onSave(): Promise<void> {
@@ -226,6 +214,8 @@ async function onFileSelect(key: string): Promise<void> {
     void onImportTemplate()
   } else if (key === 'exportTpl') {
     onExportTemplate()
+  } else if (key === 'importData') {
+    showDataImport.value = true
   }
 }
 
@@ -273,18 +263,14 @@ function confirmNewTemplate(): void {
   message.success(`已新建：${name}`)
 }
 
-function onThemeSelect(key: string): void {
-  if (key === 'light' || key === 'dark' || key === 'system') {
-    uiStore.setPreference(key)
-    message.success(
-      key === 'system' ? '已切换：跟随系统' : key === 'dark' ? '已切换：深色主题' : '已切换：浅色主题',
-    )
-  }
-}
-
 /** 一键切换（☀ ↔ 🌙）：忽略 system，直接 light/dark 翻转 */
 function onToggleTheme(): void {
   uiStore.toggleTheme()
+}
+
+/** 点击版本号：SVIP 黑金主题开关 */
+function onToggleSvip(): void {
+  uiStore.toggleSvip()
 }
 
 async function confirmSaveAs(): Promise<void> {
@@ -315,8 +301,6 @@ const IconSun: Component = () =>
   h('div', { class: 'i-carbon-sun text-16px' })
 const IconMoon: Component = () =>
   h('div', { class: 'i-carbon-moon text-16px' })
-const IconAuto: Component = () =>
-  h('div', { class: 'i-carbon-screen text-16px' })
 const IconChevronDown: Component = () =>
   h('div', { class: 'i-carbon-chevron-down text-12px' })
 </script>
@@ -331,8 +315,22 @@ const IconChevronDown: Component = () =>
       <div class="logo-circle">
         <img src="@/assets/logo.png" alt="OpenPrint" class="logo-img" />
       </div>
-      <span class="product-name">OpenPrint 设计器</span>
-      <span class="version-tag">V1.0.0</span>
+      <span class="product-name">OpenPrint</span>
+      <NTooltip>
+        <template #trigger>
+          <span
+            class="version-tag"
+            :class="{ 'is-svip': isSvip }"
+            role="button"
+            tabindex="0"
+            @click="onToggleSvip"
+            @keydown.enter="onToggleSvip"
+          >
+            {{ isSvip ? 'SVIP' : 'v2.0.0' }}
+          </span>
+        </template>
+        {{ isSvip ? 'SVIP 黑金主题 · 点击退出' : '点击切换 SVIP 黑金主题' }}
+      </NTooltip>
 
       <NDropdown :options="fileMenuOptions" @select="onFileSelect">
         <span class="file-menu-trigger">
@@ -355,16 +353,16 @@ const IconChevronDown: Component = () =>
         模板市场
       </NButton>
 
-      <!-- 导入数据 -->
+      <!-- 流水标签批量打印 -->
       <NButton
         size="small"
         ghost
         class="toolbar-ghost-btn"
         style="margin-left: 8px"
-        @click="showDataImport = true"
+        @click="showFlowLabel = true"
       >
-        <div class="i-carbon-table mr-1 text-14px" />
-        导入数据
+        <div class="i-carbon-tag mr-1 text-14px" />
+        流水标签
       </NButton>
 
       <NTooltip>
@@ -443,15 +441,6 @@ const IconChevronDown: Component = () =>
         </template>
         切换主题：{{ isDark ? '当前深色，点击切浅色' : '当前浅色，点击切深色' }}
       </NTooltip>
-
-      <!-- 主题菜单（浅/深/跟随系统） -->
-      <NDropdown :options="themeOptions" @select="onThemeSelect" trigger="click">
-        <NButton quaternary size="small" class="toolbar-icon-btn">
-          <n-icon size="16">
-            <IconChevronDown />
-          </n-icon>
-        </NButton>
-      </NDropdown>
 
       <div class="toolbar-sep" />
 
@@ -553,6 +542,9 @@ const IconChevronDown: Component = () =>
 
     <!-- 打印对话框 -->
     <PrintDialog v-model:show="showPrint" />
+
+    <!-- 流水标签批量打印工作台 -->
+    <FlowLabelModal v-model:show="showFlowLabel" />
 
     <!-- AI 设计助手面板 -->
     <AiAssistantPanel v-model:show="showAi" @open-settings="showSettings = true" />
@@ -681,8 +673,40 @@ const IconChevronDown: Component = () =>
 }
 
 .version-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 8px;
   font-size: 11px;
-  color: var(--brand-nav-text-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 70%, #0b1c3a));
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.15s;
+}
+.version-tag:hover {
+  filter: brightness(1.15);
+}
+/* SVIP 黑金激活态：金色渐变文字（#FFB95A → #E4A93C → #B87100）+ 深炭底 + 金描边 */
+.version-tag.is-svip {
+  color: transparent;
+  background: #2b2e31;
+  background-image: linear-gradient(135deg, #ffb95a 0%, #e4a93c 55%, #b87100 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  border: 1px solid rgba(228, 169, 60, 0.55);
+  box-shadow: 0 0 8px rgba(228, 169, 60, 0.25);
+  letter-spacing: 0.5px;
+}
+.version-tag.is-svip:hover {
+  filter: brightness(1.2);
 }
 
 /* 文件菜单触发器 */

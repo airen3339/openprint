@@ -87,11 +87,26 @@ function fieldPlaceholder(field: string): string {
 }
 
 function placeholderOf(cell: TableCell, col: TableColumn | undefined): string {
+  const mode = cell.contentType
+  if (mode === 'expression') return cell.expression ?? ''
+  if (mode === 'variable') return cell.field ? fieldPlaceholder(cell.field) : ''
+  if (mode === 'fixed') return ''
+  // 老模板启发式（无 contentType）：expression > field > 列配置
   if (cell.expression) return cell.expression
   if (cell.field) return fieldPlaceholder(cell.field)
   if (col?.expression) return col.expression
   if (col?.field) return fieldPlaceholder(col.field)
   return ''
+}
+
+/** 单元格是否按"绑定占位"显示（variable / expression 显式模式，或老模板启发式命中字段） */
+function isBoundCell(cell: TableCell, col: TableColumn | undefined, isDataRow: boolean): boolean {
+  const mode = cell.contentType
+  if (mode === 'variable' || mode === 'expression') return true
+  if (mode === 'fixed') return false
+  return Boolean(
+    cell.field || cell.expression || (isDataRow && col?.field) || (isDataRow && col?.expression),
+  )
 }
 
 /**
@@ -164,7 +179,7 @@ export function renderTableGridHtml(control: TableControl): string {
       const span = spanRow[c]!.colSpan
       const rspan = spanRow[c]!.rowSpan
       const isAgg = isAggToken(cell.text)
-      const bound = Boolean(cell.field || cell.expression || (isDataRow && col?.field) || (isDataRow && col?.expression))
+      const bound = isBoundCell(cell, col, isDataRow)
       // 聚合 token（{{#totalSum}} 等）按占位符着色显示，提示用户这是动态计算单元格
       const placeholder = bound || isAgg
       const text = bound ? placeholderOf(cell, col) : (cell.text ?? '')

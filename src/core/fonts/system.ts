@@ -121,6 +121,15 @@ async function load(): Promise<boolean> {
   return inflight
 }
 
+/** 判断某个 family+weight+style 的 FontFace 是否已注册（避免重复 add 导致 FontFaceSet 无限累积） */
+function isFontRegistered(family: string, weight: string, style: string): boolean {
+  if (typeof document === 'undefined' || !document.fonts) return false
+  for (const f of document.fonts) {
+    if (f.family === family && String(f.weight) === weight && f.style === style) return true
+  }
+  return false
+}
+
 /** 把系统字体按需注册到 document.fonts（浏览器 FontFace API） */
 async function registerInDocument(list: SystemFontEntry[], base: string): Promise<void> {
   if (!canUseFontFace() || typeof document === 'undefined') return
@@ -134,10 +143,16 @@ async function registerInDocument(list: SystemFontEntry[], base: string): Promis
   const tasks: Promise<void>[] = []
   for (const e of list) {
     if (!e.family || !e.path) continue
+    const weight = /bold/i.test(e.family) ? 'bold' : 'normal'
+    const style = /italic|oblique/i.test(e.family) ? 'italic' : 'normal'
+    // 修复：打印客户端连通时，每次打开打印窗口都会 loadIfStale → 重新注册全部系统字体。
+    // 旧的 document.fonts.add 不去重，FontFaceSet 会随每次打开累积，内存只增不减。
+    // 这里跳过已注册的 (family+weight+style)，让集合稳定。
+    if (isFontRegistered(e.family, weight, style)) continue
     try {
       const ff = new FontFaceCtor(e.family, `url(${systemFontDataUrl(e, base)})`, {
-        weight: /bold/i.test(e.family) ? 'bold' : 'normal',
-        style: /italic|oblique/i.test(e.family) ? 'italic' : 'normal',
+        weight,
+        style,
       })
       tasks.push(
         ff.load().then(

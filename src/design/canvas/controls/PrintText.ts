@@ -16,6 +16,7 @@ export class PrintText extends Textbox implements IPrintObject {
   /** 协议 extras（设计期保留，显示文本只是占位） */
   binding?: string
   expression?: string
+  contentType?: TextControl['contentType']
   controlFormat?: TextControl['format']
   printable = true
   visibleIf?: string
@@ -35,6 +36,7 @@ export class PrintText extends Textbox implements IPrintObject {
     this.zoneId = undefined
     this.binding = control.binding
     this.expression = control.expression
+    this.contentType = control.contentType
     this.controlFormat = control.format
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf
@@ -46,6 +48,7 @@ export class PrintText extends Textbox implements IPrintObject {
     return {
       ...readBaseGeometry(this),
       type: 'text',
+      contentType: this.contentType,
       value: this.binding || this.expression ? undefined : this.text,
       binding: this.binding,
       expression: this.expression,
@@ -77,6 +80,7 @@ export class PrintText extends Textbox implements IPrintObject {
     })
     this.binding = control.binding
     this.expression = control.expression
+    this.contentType = control.contentType
     this.controlFormat = control.format
     this.printable = control.printable ?? true
     this.visibleIf = control.visibleIf
@@ -89,8 +93,13 @@ export class PrintText extends Textbox implements IPrintObject {
   }
 }
 
-/** 设计期显示文本：绑定/表达式显示占位符，静态文本显示本体 */
+/** 设计期显示文本：按 contentType 显示占位符，老模板回退到 expression/binding 启发式 */
 function displayText(control: TextControl): string {
+  const mode = control.contentType
+  if (mode === 'expression') return control.expression ?? ''
+  if (mode === 'variable') return control.binding ? `{{${control.binding}}}` : ''
+  if (mode === 'fixed') return control.value ?? '文本'
+  // 无 contentType（老模板）：沿用既有启发式
   if (control.expression) return control.expression
   if (control.binding) return `{{${control.binding}}}`
   return control.value ?? '文本'

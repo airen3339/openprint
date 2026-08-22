@@ -74,6 +74,14 @@ export interface TextStyle {
 
 export interface TextControl extends ControlBase {
   type: 'text'
+  /**
+   * 内容类型判别（显式三态）：
+   * - 'fixed'      固定值（value 文本，可含手敲 {{}}）
+   * - 'variable'   字段绑定（binding 路径）
+   * - 'expression' 表达式（expression 字段，支持 {{...}} / 内置函数）
+   * 老模板无此字段时，渲染端按 expression > binding > value 启发式回退（见 data-binder.resolveTextValue）。
+   */
+  contentType?: 'fixed' | 'variable' | 'expression'
   /** 静态文本（与 binding/expression 三选一） */
   value?: string
   /** 字段绑定路径，如 "customer.name" */
@@ -192,6 +200,14 @@ export interface TableColumn {
  * 布局网格（无 dataSource）：全部 designRows 行均为静态内容。
  */
 export interface TableCell {
+  /**
+   * 内容类型判别（显式三态，与文本控件一致）：
+   * - 'fixed'      固定文字（text）
+   * - 'variable'   字段绑定（field 路径）
+   * - 'expression' 表达式（expression，支持 {{...}} / 内置函数）
+   * 老模板无此字段时，渲染端按 expression > field > text 启发式回退（见 table-engine.cellTextMode）。
+   */
+  contentType?: 'fixed' | 'variable' | 'expression'
   /** 静态文字（无数据时显示 / 设计期占位） */
   text?: string
   /** 字段绑定路径（数据源数组元素的字段），优先级高于 text */
@@ -308,8 +324,17 @@ export interface TableControl extends ControlBase {
 
 export interface BarcodeControl extends ControlBase {
   type: 'barcode'
+  /**
+   * 内容类型判别（显式三态，与文本一致）：fixed=value / variable=binding / expression=expression。
+   * 老模板无此字段时按 binding > value 启发式回退（见 data-binder.resolveCodeText）。
+   */
+  contentType?: 'fixed' | 'variable' | 'expression'
+  /** 字段绑定路径（variable 模式） */
   binding?: string
+  /** 静态编码内容（fixed 模式，可含 {{}} 插值） */
   value?: string
+  /** 表达式（expression 模式），如 "{{order.orderNo}}" / "{{now() | date:'YYYYMMDD'}}" */
+  expression?: string
   /** bwip-js bcid，如 CODE128 / EAN13 */
   format?: string
   /** 是否显示文字 */
@@ -318,8 +343,17 @@ export interface BarcodeControl extends ControlBase {
 
 export interface QrcodeControl extends ControlBase {
   type: 'qrcode'
+  /**
+   * 内容类型判别（显式三态，与文本一致）：fixed=value / variable=binding / expression=expression。
+   * 老模板无此字段时按 binding > value 启发式回退（见 data-binder.resolveCodeText）。
+   */
+  contentType?: 'fixed' | 'variable' | 'expression'
+  /** 字段绑定路径（variable 模式） */
   binding?: string
+  /** 静态编码内容（fixed 模式，可含 {{}} 插值） */
   value?: string
+  /** 表达式（expression 模式） */
+  expression?: string
   /** 纠错级别 L/M/Q/H */
   errorLevel?: 'L' | 'M' | 'Q' | 'H'
 }
@@ -472,6 +506,13 @@ export interface LabelGridControl extends ControlBase {
   lineStyle?: 'solid' | 'dashed'
   /** 卡片模板：相对卡片左上角定位的子控件（绝对 mm，坐标已归一化） */
   children: AnyControl[]
+  /**
+   * 可选逐卡数据源：数据根对象上的**数组路径**（如 `items`）。
+   * 配置后：卡片总数跟随数据条数（每数据一条卡，跨页自洽），每张卡注入行上下文
+   * `{ row, rowIndex }`，卡内控件可绑定 `{{row.字段}}` / `{{rowIndex + 1}}`
+   * → 每卡流水号/条码/二维码各不相同。缺省 = 纯布局平铺（每卡相同）。
+   */
+  dataSource?: string
 }
 
 /* --------------------------------- 联合 ---------------------------------- */

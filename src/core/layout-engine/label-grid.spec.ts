@@ -2,7 +2,8 @@
  * label-grid 展开器单测 —— 验证「纯布局平铺」范式：
  *  - 总卡片数 = 列数 × 行数（行数由容器高度推导），每张卡 = children 一份完全相同的实例；
  *  - 多列按行铺开、行满换页（top 跨页绝对坐标自洽）；
- *  - 标签网格不带数据源，rowCtx 恒空（逐卡数据由卡内其他数据组件负责）；
+ *  - 可选逐卡数据绑定（dataSource）：卡片数跟随数据条数，每卡注入 {row,rowIndex}，
+ *    卡内绑定 {{row.字段}} / {{rowIndex}} 逐卡不同；缺省 rowCtx 恒空；
  *  - 空 children（合法空布局）、超 maxPages 等边界正确。
  */
 import { describe, expect, it } from 'vitest'
@@ -193,7 +194,91 @@ describe('expandLabelGrids —— 边界', () => {
   })
 })
 
-describe('withRowCtx —— 标签网格恒空行上下文', () => {
+describe('expandLabelGrids —— 逐卡数据绑定（dataSource）', () => {
+  const items = Array.from({ length: 5 }, (_, i) => ({
+    serialNo: `SN-${String(i + 1).padStart(3, '0')}`,
+  }))
+
+  it('数据条数决定卡片总数，每张卡注入 {row, rowIndex}', () => {
+    const ctx: EvalContext = { data: { items } }
+    const res = expandLabelGrids(
+      [makeGrid({ dataSource: 'items' })],
+      ctx,
+      'mm',
+      bodyStepMm(metrics),
+      MAX_PAGES,
+    )
+
+    // 5 条数据 → 5 张卡 × 2 子控件 = 10 个生成控件（而非纯布局的 18 个）
+    expect(res.expanded).toBe(true)
+    expect(res.components.length).toBe(10)
+    // 每张卡的每个子控件都有行上下文
+    expect(res.rowCtx.size).toBe(10)
+    expect(res.rowCtx.get(genId('grid1', 0, 'c-name'))!.rowIndex).toBe(0)
+    expect(res.rowCtx.get(genId('grid1', 0, 'c-name'))!.row.serialNo).toBe('SN-001')
+    expect(res.rowCtx.get(genId('grid1', 4, 'c-rect'))!.rowIndex).toBe(4)
+    expect(res.rowCtx.get(genId('grid1', 4, 'c-rect'))!.row.serialNo).toBe('SN-005')
+    // 数据模式无告警
+    expect(res.warnings.length).toBe(0)
+  })
+
+  it('withRowCtx 对生成控件注入行数据（卡内 {{row.字段}} 可求值）', () => {
+    const ctx: EvalContext = { data: { items } }
+    const res = expandLabelGrids(
+      [makeGrid({ dataSource: 'items' })],
+      ctx,
+      'mm',
+      bodyStepMm(metrics),
+      MAX_PAGES,
+    )
+    const c = withRowCtx(genId('grid1', 2, 'c-name'), ctx, res.rowCtx)
+    expect(c.row).toEqual(items[2])
+    expect(c.rowIndex).toBe(2)
+  })
+
+  it('数据源缺失/非数组 → LABEL_GRID_DATA_MISSING，回退纯布局平铺', () => {
+    const res = expandLabelGrids(
+      [makeGrid({ dataSource: 'items' })],
+      makeCtx(),
+      'mm',
+      bodyStepMm(metrics),
+      MAX_PAGES,
+    )
+    expect(res.warnings.some((w) => w.code === 'LABEL_GRID_DATA_MISSING')).toBe(true)
+    expect(res.components.length).toBe(18) // 回退 3×3 纯布局
+    expect(res.rowCtx.size).toBe(0)
+  })
+
+  it('数据源为空数组 → LABEL_GRID_DATA_EMPTY，回退纯布局平铺', () => {
+    const res = expandLabelGrids(
+      [makeGrid({ dataSource: 'items' })],
+      { data: { items: [] } },
+      'mm',
+      bodyStepMm(metrics),
+      MAX_PAGES,
+    )
+    expect(res.warnings.some((w) => w.code === 'LABEL_GRID_DATA_EMPTY')).toBe(true)
+    expect(res.components.length).toBe(18)
+  })
+
+  it('数据超一页容量 → 自动跨页平铺，每卡行上下文正确', () => {
+    // bodyStep=100 → 每页 3 行（stepY=33）；10 条数据 → 跨 2 页
+    const rows = Array.from({ length: 10 }, (_, i) => ({ serialNo: `SN-${i + 1}` }))
+    const res = expandLabelGrids(
+      [makeGrid({ dataSource: 'items' })],
+      { data: { items: rows } },
+      'mm',
+      100,
+      MAX_PAGES,
+    )
+    expect(res.components.length).toBe(20) // 10 张卡 × 2 子控件
+    expect(res.rowCtx.size).toBe(20)
+    expect(res.rowCtx.get(genId('grid1', 9, 'c-name'))!.rowIndex).toBe(9)
+    expect(res.warnings.length).toBe(0)
+  })
+})
+
+describe('withRowCtx —— 无数据源时行上下文恒空', () => {
   it('无行上下文时原样返回 base ctx（零开销、无 row 字段）', () => {
     const ctx = makeCtx()
     expect(withRowCtx('grid1~0~c-name', ctx)).toBe(ctx)
@@ -256,6 +341,38 @@ describe('layout() 端到端 —— 标签网格走完整渲染链路', () => {
     expect(result.pages.length).toBeGreaterThan(1)
     // 末页 pageNo 应等于总页数
     expect(result.pages[result.pages.length - 1]!.pageNo).toBe(result.pages.length)
+  })
+
+  it('逐卡数据绑定：dataSource + 卡内 {{row.字段}} → 每卡流水号不同', async () => {
+    const card: AnyControl[] = [
+      {
+        id: 'c-sn',
+        type: 'text',
+        left: 3,
+        top: 3,
+        width: 34,
+        height: 6,
+        value: '{{row.serialNo}}',
+        style: { fontSize: 10 },
+        printable: true,
+      },
+    ]
+    const grid = makeGrid({ dataSource: 'items', children: card })
+    const data = {
+      items: Array.from({ length: 5 }, (_, i) => ({
+        serialNo: `SN-${String(i + 1).padStart(3, '0')}`,
+      })),
+    }
+    const result = await layout(makeTemplate(grid), data)
+    expect(result.warnings.length).toBe(0)
+
+    const html = renderHtml(result, { screen: false })
+    // 5 张卡，流水号各不相同
+    for (let i = 1; i <= 5; i++) {
+      expect(html).toContain(`SN-${String(i).padStart(3, '0')}`)
+    }
+    // 数据驱动：只有 5 张卡（而非纯布局的 9 张）
+    expect(result.pages[0]!.body.length).toBe(5)
   })
 
   it('关闭网格线：预览不含网格参考线', async () => {

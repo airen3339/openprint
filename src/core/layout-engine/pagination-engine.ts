@@ -236,12 +236,24 @@ function paginateFlowTable(
   const slices: TableSkeleton['slices'] = []
   const keepTogether = model.control.options?.keepTogether ?? false
 
+  // 页眉/页脚色带每页重复（repeat=true，默认）时占据页面顶部/底部（整页相对 top:0 / bottom:0）。
+  // 流式表格自动切页不能落进色带区：
+  // - 非首页切片从「页眉下方」（zoneTop = headerHeight）开始，避免覆盖每页重复的页眉；
+  // - 每页可用高度 = 页高 - 页眉 - 页脚（色带存在时）；无色带时回退到 bodyHeight（历史语义，零回归）。
+  const headerH = metrics.headerHeight
+  const footerH = metrics.footerHeight
+  const zoneTop = headerH > 0 ? headerH : 0
+  const usablePerPage =
+    headerH > 0 || footerH > 0
+      ? Math.max(1, metrics.pageHeight - headerH - footerH)
+      : metrics.bodyHeight
+
   // keepTogether：首页放不下"表头 + 1 行 + 表尾"就整体下移到第 2 页（§7.4）
   let firstPageIndex = 0
   let firstTop = tableTop
-  if (keepTogether && metrics.bodyHeight - tableTop < minStartHeight(model)) {
+  if (keepTogether && usablePerPage - (tableTop - zoneTop) < minStartHeight(model)) {
     firstPageIndex = 1
-    firstTop = 0
+    firstTop = zoneTop
   }
 
   let start = 0
@@ -259,8 +271,10 @@ function paginateFlowTable(
       break
     }
 
-    const topOnPage = pageIndex === firstPageIndex ? firstTop : 0
-    const availFull = Math.max(0, metrics.bodyHeight - topOnPage)
+    const topOnPage = pageIndex === firstPageIndex ? firstTop : zoneTop
+    // 首页：表格从用户放置位置排到页脚上沿（pageHeight - footerH）；
+    // 非首页：从页眉下方排满「每页可用高」。无色带时退化为 bodyHeight - topOnPage（原逻辑）。
+    const availFull = Math.max(0, usablePerPage - (topOnPage - zoneTop))
 
     // 先试"为下方控件预留空间"的窄预算；能一次放完，说明这就是末页
     let slice = null as ReturnType<typeof sliceTable> | null
@@ -448,10 +462,17 @@ export async function layout(
   warnings.push(...skeleton.warnings)
 
   const tableLastPage = skeleton.slices.at(-1)?.pageIndex ?? 0
-  // 下方控件放得下就跟在末片后面，否则独占新的一页（top 从 0 起）
-  const belowFitsOnTablePage = skeleton.lastBottom + reserveBelow <= metrics.bodyHeight + EPS
+  // 色带占位（与 paginateFlowTable 内同口径）：非首页/独占新页时从页眉下方起
+  const headerH = metrics.headerHeight
+  const footerH = metrics.footerHeight
+  const zoneTop = headerH > 0 ? headerH : 0
+  // 下方控件放得下就跟在末片后面，否则独占新的一页（top 从页眉下方起，不覆盖色带）
+  // 末页可用底部 = 页脚上沿（整页相对）；无色带时回退 bodyHeight（原逻辑）。
+  const lastPageAvail =
+    headerH > 0 || footerH > 0 ? Math.max(0, metrics.pageHeight - footerH) : metrics.bodyHeight
+  const belowFitsOnTablePage = skeleton.lastBottom + reserveBelow <= lastPageAvail + EPS
   const belowPageIndex = belowFitsOnTablePage ? tableLastPage : tableLastPage + 1
-  const belowBaseTop = belowFitsOnTablePage ? skeleton.lastBottom : 0
+  const belowBaseTop = belowFitsOnTablePage ? skeleton.lastBottom : zoneTop
 
   const totalPages = Math.max(1, Math.max(tableLastPage, belowPageIndex) + 1)
   const lastPageNo = totalPages
@@ -560,8 +581,8 @@ async function layoutStaticOnly(
   const bodyH = bodyStepMm(metrics)
 
   // 控件按 top 落在第几个 bodyHeight 区间就进第几页。
-  // 分页步长 = 页高 - 上边距（含下边距区）：正文控件可自由落进下边距（边距只作设计辅助），
-  // top ∈ [0, 页高-上边距) 均属当前页，避免拖到底部贴边距时被误判到下一页造成底部空白。
+  // 整页相对模型：分页步长 = 物理页高（边距仅作可视化参考线，不再参与分页），
+  // top ∈ [0, 页高) 均属当前页，控件可落在整页任意位置（含原边距带）。
   let maxPageIndex = 0
   const buckets = new Map<number, AnyControl[]>()
   for (const c of components) {

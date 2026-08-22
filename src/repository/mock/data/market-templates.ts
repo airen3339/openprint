@@ -5,7 +5,8 @@
  * - 内容以**静态文本**为主（不绑定数据源），保证用户点击即可用、所见即所得；
  *   需要真实数据时再自行替换为绑定/表达式。
  * - 二维码控件为静态 value（qrcode 库直接编码，画布/渲染开箱即用）。
- * - 坐标全部 mm，相对所属 section 左上角（协议约定）。
+ * - 坐标全部 mm，正文按**内容区相对**书写（相对页边距内容区左上角），由 `build()`
+ *   统一迁移为**整页相对**（+边距偏移）——渲染以物理页 0,0 为准，边距仅作可视化参考线。
  */
 import type {
   AnyControl,
@@ -66,7 +67,33 @@ function paper(
   }
 }
 
+/**
+ * 整页相对坐标迁移（2026-08-21 坐标模型变更后必需）：
+ * 把「内容区相对」坐标平移回物理页，避免内容整体向左上偏移出边距参考线。
+ * - body 控件：left += margin.left，top += margin.top
+ * - header/footer 子控件：left += margin.left，top 不变（色带仍贴页顶/页底，由 CSS 定位）
+ * - labelgrid：本体平移，children 相对卡片左上角不平移（市场模板暂无，防御性处理）
+ */
+function shiftToPageRelative(sections: Section<AnyControl>[], margin: PageMargin): void {
+  const ml = margin.left ?? 0
+  const mt = margin.top ?? 0
+  for (const sec of sections) {
+    const isBand = sec.type === 'header' || sec.type === 'footer'
+    for (const c of sec.components ?? []) {
+      if (c.type === 'zone') continue
+      if (c.type === 'labelgrid') {
+        c.left = (c.left ?? 0) + ml
+        c.top = (c.top ?? 0) + (isBand ? 0 : mt)
+        continue
+      }
+      c.left = (c.left ?? 0) + ml
+      c.top = (c.top ?? 0) + (isBand ? 0 : mt)
+    }
+  }
+}
+
 function build(page: PageSetup, sections: Section<AnyControl>[]): TemplateData<AnyControl> {
+  shiftToPageRelative(sections, page.margin)
   return { version: '1.0', document: { type: 'report', page, sections } }
 }
 

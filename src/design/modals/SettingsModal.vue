@@ -40,16 +40,48 @@ const message = useMessage()
 
 /* ------------------------------ 功能栏 ------------------------------ */
 
-type NavKey = 'local' | 'remote' | 'ai' | 'feedback' | 'group'
+type NavKey = 'local' | 'remote' | 'ai' | 'feedback' | 'group' | 'tutorial'
 const activeKey = ref<NavKey>('local')
 
 const NAV_ITEMS: Array<{ key: NavKey; label: string; icon: string; desc: string }> = [
   { key: 'local', label: '本地打印', icon: 'i-carbon-printer', desc: '浏览器直接打印 / 静默后台打印' },
   { key: 'remote', label: '远程云打印', icon: 'i-carbon-cloud-upload', desc: '通过远程打印服务出纸' },
   { key: 'ai', label: 'AI 助手', icon: 'i-carbon-ai-status', desc: '用自然语言生成打印模板' },
+  { key: 'tutorial', label: '在线教程', icon: 'i-carbon-book', desc: 'Bilibili 视频教程，点击跳转学习' },
   { key: 'feedback', label: '功能反馈', icon: 'i-carbon-chat', desc: '改进建议 / 新功能需求' },
   { key: 'group', label: '交流群', icon: 'i-carbon-group', desc: '扫码加入 QQ 交流群' },
 ]
+
+/* ------------------------------ 在线教程 ------------------------------ */
+
+/**
+ * Bilibili 教程视频列表。每条会作为可点击卡片展示，点击在新标签打开对应 Bilibili 视频。
+ * 用户可在此基础上自由增删条目（替换 url 为真实地址即可）。
+ */
+const TUTORIAL_VIDEOS: Array<{ title: string; url: string; desc: string }> = [
+  {
+    title: 'OpenPrint 快速上手（示例）',
+    url: 'https://www.bilibili.com/video/BV1Hpby6TEJd/?vd_source=b6609163a4dfc54e5a72aa82dc425198#reply311269612161',
+    desc: '从打开设计器到打印出第一张单据的完整流程。',
+  },
+  {
+    title: '模板设计与表格排版（示例）',
+    url: 'https://www.bilibili.com/video/BV1Hpby6TEJd/?vd_source=b6609163a4dfc54e5a72aa82dc425198#reply311269612161',
+    desc: '讲解表格、数据源绑定与表达式的进阶用法。',
+  },
+  {
+    title: '本地打印客户端配置（示例）',
+    url: 'https://www.bilibili.com/video/BV1Hpby6TEJd/?vd_source=b6609163a4dfc54e5a72aa82dc425198#reply311269612161',
+    desc: '安装 Qprint 客户端并开启静默打印。',
+  },
+]
+
+/** 在新标签打开外部链接（Bilibili 视频等） */
+function openExternal(url: string): void {
+  window.open(url, '_blank', 'noopener')
+}
+
+
 
 /* ------------------------------ 配置模型 ------------------------------ */
 
@@ -161,9 +193,25 @@ function resetLocalEndpoint(): void {
   message.success('已恢复出厂地址 127.0.0.1:18888')
 }
 
-/** 客户端下载占位：Windows 静默打印客户端发布后在此挂真实下载链接 */
-function onDownloadClient(): void {
-  message.info('Windows 静默打印客户端即将发布，敬请期待')
+/**
+ * 客户端下载：指向项目 public/Qprint.exe，点击直接下载（不跳页）。
+ * 文件由用户放入 public/ 目录，Vite 会原样发布到站点根 /Qprint.exe。
+ */
+async function onDownloadClient(): Promise<void> {
+  const url = '/Qprint.exe'
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    if (!res.ok) throw new Error('not found')
+  } catch {
+    message.warning('未找到客户端安装包，请确认已将 Qprint.exe 放到 public/ 目录')
+    return
+  }
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'Qprint.exe'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 /* ------------------------------ 功能反馈 ------------------------------ */
@@ -290,15 +338,18 @@ function copyToClipboard(value: string, label: string): void {
             </NText>
           </div>
 
-          <!-- 客户端静默打印：安装包下载 -->
-          <div v-if="settings.local.method === 'silent'">
-            <NButton size="small" secondary @click="onDownloadClient">
+          <!-- 客户端下载：指向 public/Qprint.exe，点击直接下载 -->
+          <div class="rounded-8px border border-brand-border bg-brand-surface p-3">
+            <div class="config-title mb-1">本地打印客户端</div>
+            <NText depth="3" class="block text-12px mb-2">
+              下载并安装 Qprint 客户端后即可开启「客户端静默打印」。安装包随站点发布于 public/Qprint.exe。
+            </NText>
+            <NButton size="small" type="primary" secondary @click="onDownloadClient">
               <template #icon>
                 <div class="i-carbon-download text-14px" />
               </template>
-              下载客户端
+              下载客户端（Qprint.exe）
             </NButton>
-            <NText depth="3" class="block text-12px mt-1">Windows 客户端安装包即将提供下载。</NText>
           </div>
 
           <div class="flex items-center justify-between">
@@ -436,6 +487,32 @@ function copyToClipboard(value: string, label: string): void {
             <NInput v-model:value="ai.model" size="small" placeholder="gpt-4o-mini" />
           </div>
         </div>
+
+      <!-- 在线教程 -->
+      <div v-else-if="activeKey === 'tutorial'" class="flex flex-col gap-4">
+        <div class="rounded-8px border border-brand-border bg-brand-surface p-4">
+          <div class="config-title mb-1">Bilibili 视频教程</div>
+          <NText depth="3" class="block text-12px mb-3">
+            点击任意教程卡片，将在新标签页打开 Bilibili 视频学习如何使用 OpenPrint。
+          </NText>
+
+          <div class="flex flex-col gap-2">
+            <div
+              v-for="item in TUTORIAL_VIDEOS"
+              :key="item.url"
+              class="tutorial-card"
+              @click="openExternal(item.url)"
+            >
+              <div class="i-carbon-play-filled tutorial-card-icon" />
+              <div class="min-w-0 flex-1">
+                <div class="text-13px font-medium text-brand-text-1 truncate">{{ item.title }}</div>
+                <div class="text-12px text-brand-text-3 truncate">{{ item.desc }}</div>
+              </div>
+              <div class="i-carbon-launch text-14px text-brand-text-3" />
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 功能反馈 -->
       <div v-else-if="activeKey === 'feedback'" class="flex flex-col gap-4">
@@ -575,5 +652,29 @@ function copyToClipboard(value: string, label: string): void {
   border: 1px solid var(--brand-border);
   background: #fff;
   cursor: zoom-in;
+}
+.tutorial-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--brand-border);
+  background: var(--brand-surface, #f6f7f9);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    transform 0.05s;
+}
+.tutorial-card:hover {
+  background: rgba(22, 119, 255, 0.08);
+}
+.tutorial-card:active {
+  transform: scale(0.99);
+}
+.tutorial-card-icon {
+  font-size: 22px;
+  color: var(--brand-primary, #1677ff);
+  flex-shrink: 0;
 }
 </style>
